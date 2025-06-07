@@ -1,9 +1,0 @@
-torch
-torchaudio
-demucs
-pyannote-audio
-tkinter
-librosa
-numpy
-scipy
-matplotlib
