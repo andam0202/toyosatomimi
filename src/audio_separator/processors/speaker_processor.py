@@ -113,6 +113,42 @@ class SpeakerProcessor:
                     use_auth_token=self.use_auth_token if self.use_auth_token else None
                 )
                 
+                # パイプラインの詳細パラメータ調整
+                # より精密な話者分離のためのパラメータ設定
+                if hasattr(self.pipeline, '_segmentation'):
+                    # セグメンテーション感度調整（より細かい分離）
+                    if hasattr(self.pipeline._segmentation, 'onset'):
+                        self.pipeline._segmentation.onset = 0.3  # デフォルト0.5から下げる
+                    if hasattr(self.pipeline._segmentation, 'offset'):
+                        self.pipeline._segmentation.offset = 0.3  # デフォルト0.5から下げる
+                
+                if hasattr(self.pipeline, '_clustering'):
+                    # クラスタリング閾値調整（話者をより細かく分離）
+                    if hasattr(self.pipeline._clustering, 'threshold'):
+                        self.pipeline._clustering.threshold = 0.5  # デフォルト0.7から下げる
+                
+                # 重複発話制御の設定
+                if hasattr(self.pipeline, 'instantiate'):
+                    # 重複発話検出を無効化（重なりを避ける）
+                    try:
+                        # pyannote v3.1では重複部分を自動で処理する設定
+                        self.pipeline.instantiate({
+                            'segmentation': {
+                                'min_duration_on': 0.0,
+                                'min_duration_off': 0.0
+                            },
+                            'clustering': {
+                                'method': 'centroid',
+                                'min_cluster_size': 2,
+                                'threshold': 0.5
+                            }
+                        })
+                    except Exception as e:
+                        logging.info(f"パイプライン詳細設定をスキップ: {e}")
+                
+                # 重複発話を避けるための後処理フラグ
+                self._remove_overlapping_segments = True
+                
                 # デバイスに移動
                 self.pipeline = self.pipeline.to(device)
                 self._device = device
@@ -131,12 +167,45 @@ class SpeakerProcessor:
         except Exception as e:
             raise RuntimeError(f"話者分離パイプラインの初期化に失敗: {e}")
     
+    def _initialize_pipeline_with_params(
+        self, 
+        clustering_threshold: float,
+        segmentation_onset: float,
+        segmentation_offset: float
+    ) -> None:
+        """
+        パラメータを動的に設定してパイプラインを初期化
+        """
+        # 基本初期化
+        self._initialize_pipeline()
+        
+        if hasattr(self, '_pyannote_available') and self._pyannote_available:
+            try:
+                # パラメータを動的に更新
+                if hasattr(self.pipeline, '_segmentation'):
+                    if hasattr(self.pipeline._segmentation, 'onset'):
+                        self.pipeline._segmentation.onset = segmentation_onset
+                    if hasattr(self.pipeline._segmentation, 'offset'):
+                        self.pipeline._segmentation.offset = segmentation_offset
+                
+                if hasattr(self.pipeline, '_clustering'):
+                    if hasattr(self.pipeline._clustering, 'threshold'):
+                        self.pipeline._clustering.threshold = clustering_threshold
+                
+                logging.info(f"パイプラインパラメータ更新完了: clustering={clustering_threshold}, onset={segmentation_onset}, offset={segmentation_offset}")
+                
+            except Exception as e:
+                logging.warning(f"パラメータ設定エラー: {e}")
+    
     def diarize(
         self,
         audio_path: str,
-        min_duration: float = 1.0,
+        min_duration: float = 0.5,  # より短いセグメントも検出
         max_speakers: Optional[int] = None,
-        clustering_threshold: float = 0.7
+        clustering_threshold: float = 0.5,  # より細かく分離
+        segmentation_onset: float = 0.3,  # セグメンテーション開始感度
+        segmentation_offset: float = 0.3,  # セグメンテーション終了感度
+        force_num_speakers: Optional[int] = None  # 強制的に指定した話者数に分離
     ) -> List[SpeakerSegment]:
         """
         音声ファイルの話者分離を実行
@@ -146,6 +215,9 @@ class SpeakerProcessor:
             min_duration: 最小セグメント長（秒）
             max_speakers: 最大話者数（Noneの場合は自動検出）
             clustering_threshold: クラスタリング閾値（0.1-1.0、低いほど細かく分離）
+            segmentation_onset: セグメンテーション開始感度（0.1-0.9、低いほど細かく検出）
+            segmentation_offset: セグメンテーション終了感度（0.1-0.9、低いほど細かく検出）
+            force_num_speakers: 強制的に指定した話者数に分離（Noneの場合は自動検出）
             
         Returns:
             List[SpeakerSegment]: 話者セグメントのリスト
@@ -165,14 +237,18 @@ class SpeakerProcessor:
         logging.info(f"最小セグメント長: {min_duration}秒")
         
         try:
-            # パイプライン初期化
-            self._initialize_pipeline()
+            # パイプライン初期化（パラメータ更新）
+            self._initialize_pipeline_with_params(clustering_threshold, segmentation_onset, segmentation_offset)
             
             # 音声情報取得
             audio_info = AudioUtils.get_audio_info(audio_path)
             duration = audio_info['duration']
             
             logging.info(f"音声長: {duration:.2f}秒")
+            logging.info(f"クラスタリング閾値: {clustering_threshold}")
+            logging.info(f"セグメンテーション感度: onset={segmentation_onset}, offset={segmentation_offset}")
+            if force_num_speakers:
+                logging.info(f"強制話者数: {force_num_speakers}人")
             
             # 話者分離用の音声前処理
             if hasattr(self, '_pyannote_available') and self._pyannote_available:
@@ -196,7 +272,7 @@ class SpeakerProcessor:
             
             # 話者分離実行
             if hasattr(self, '_pyannote_available') and self._pyannote_available:
-                segments = self._diarize_pyannote(audio_path_for_processing, duration, min_duration, max_speakers, clustering_threshold)
+                segments = self._diarize_pyannote(audio_path_for_processing, duration, min_duration, max_speakers, clustering_threshold, force_num_speakers)
                 
                 # 一時ファイル削除
                 if audio_path_for_processing != audio_path:
@@ -235,7 +311,8 @@ class SpeakerProcessor:
         duration: float,
         min_duration: float,
         max_speakers: Optional[int],
-        clustering_threshold: float = 0.7
+        clustering_threshold: float = 0.7,
+        force_num_speakers: Optional[int] = None
     ) -> List[SpeakerSegment]:
         """
         pyannote-audioを使用した実際の話者分離
@@ -290,6 +367,17 @@ class SpeakerProcessor:
                 
                 # 上位話者のセグメントのみを保持
                 segments = [seg for seg in segments if seg.speaker_id in top_speaker_ids]
+            
+            # 強制話者数処理（1つの話者しか検出されなかった場合の分割処理）
+            if force_num_speakers is not None:
+                unique_speakers = len(set(seg.speaker_id for seg in segments))
+                if unique_speakers == 1 and force_num_speakers > 1:
+                    logging.info(f"話者数が{unique_speakers}人のため、{force_num_speakers}人に強制分割します")
+                    segments = self._force_split_speakers(segments, force_num_speakers)
+            
+            # 重複セグメント除去処理
+            if hasattr(self, '_remove_overlapping_segments') and self._remove_overlapping_segments:
+                segments = self._remove_overlapping_speech(segments)
             
             logging.info(f"実際のpyannote-audio分離完了: {len(segments)}セグメント")
             return segments
@@ -667,3 +755,111 @@ class SpeakerProcessor:
             'num_segments': len(segments),
             'speakers': speaker_stats
         }
+    
+    def _remove_overlapping_speech(self, segments: List[SpeakerSegment]) -> List[SpeakerSegment]:
+        """
+        重複する話者セグメントを除去または調整する
+        
+        Args:
+            segments: 話者セグメントのリスト
+            
+        Returns:
+            List[SpeakerSegment]: 重複を除去したセグメントリスト
+        """
+        if not segments:
+            return segments
+        
+        # 時間順にソート
+        sorted_segments = sorted(segments, key=lambda x: x.start_time)
+        filtered_segments = []
+        
+        overlap_threshold = 0.1  # 0.1秒以上の重複は除去対象
+        removed_overlaps = 0
+        
+        for current_seg in sorted_segments:
+            # 既存セグメントとの重複チェック
+            overlapping = False
+            
+            for existing_seg in filtered_segments:
+                # 重複判定
+                overlap_start = max(current_seg.start_time, existing_seg.start_time)
+                overlap_end = min(current_seg.end_time, existing_seg.end_time)
+                overlap_duration = max(0, overlap_end - overlap_start)
+                
+                # 重複時間が閾値を超える場合
+                if overlap_duration > overlap_threshold:
+                    # より長いセグメントを優先、同じ長さなら既存を優先
+                    current_duration = current_seg.duration
+                    existing_duration = existing_seg.duration
+                    
+                    if current_duration > existing_duration:
+                        # 現在のセグメントの方が長い場合、既存を削除
+                        filtered_segments.remove(existing_seg)
+                        logging.debug(f"重複セグメント除去: {existing_seg.speaker_id} {existing_seg.start_time:.2f}-{existing_seg.end_time:.2f}s（より短い）")
+                        removed_overlaps += 1
+                        break
+                    else:
+                        # 既存のセグメントを優先、現在のセグメントを除外
+                        overlapping = True
+                        logging.debug(f"重複セグメント除去: {current_seg.speaker_id} {current_seg.start_time:.2f}-{current_seg.end_time:.2f}s（重複）")
+                        removed_overlaps += 1
+                        break
+            
+            # 重複していない場合のみ追加
+            if not overlapping:
+                filtered_segments.append(current_seg)
+        
+        if removed_overlaps > 0:
+            logging.info(f"重複セグメント除去完了: {removed_overlaps}個のセグメントを除去")
+        
+        # 再度時間順にソート
+        return sorted(filtered_segments, key=lambda x: x.start_time)
+    
+    def _force_split_speakers(self, segments: List[SpeakerSegment], target_num_speakers: int) -> List[SpeakerSegment]:
+        """
+        1つの話者として検出されたセグメントを強制的に複数話者に分割
+        
+        Args:
+            segments: 話者セグメントのリスト
+            target_num_speakers: 目標話者数
+            
+        Returns:
+            List[SpeakerSegment]: 分割されたセグメントリスト
+        """
+        if not segments or target_num_speakers <= 1:
+            return segments
+        
+        # セグメントを時間順にソート
+        sorted_segments = sorted(segments, key=lambda x: x.start_time)
+        
+        # セグメントを均等に分割してそれぞれに異なる話者IDを割り当て
+        total_segments = len(sorted_segments)
+        segments_per_speaker = total_segments // target_num_speakers
+        remainder = total_segments % target_num_speakers
+        
+        result_segments = []
+        current_index = 0
+        
+        for speaker_idx in range(target_num_speakers):
+            # この話者が担当するセグメント数
+            current_count = segments_per_speaker + (1 if speaker_idx < remainder else 0)
+            
+            # 新しい話者IDを生成
+            new_speaker_id = f"SPEAKER_{speaker_idx:02d}"
+            
+            # セグメントに新しい話者IDを割り当て
+            for i in range(current_count):
+                if current_index < total_segments:
+                    original_seg = sorted_segments[current_index]
+                    new_segment = SpeakerSegment(
+                        start_time=original_seg.start_time,
+                        end_time=original_seg.end_time,
+                        speaker_id=new_speaker_id,
+                        confidence=original_seg.confidence
+                    )
+                    result_segments.append(new_segment)
+                    current_index += 1
+            
+            logging.info(f"強制分割: {new_speaker_id} に {current_count}セグメントを割り当て")
+        
+        return result_segments

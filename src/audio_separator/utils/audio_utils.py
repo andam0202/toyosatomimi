@@ -181,18 +181,26 @@ class AudioUtils:
             np.ndarray: 処理済み音声データ
         """
         try:
-            # ノイズ除去（簡易的なスペクトル減算）
-            enhanced = AudioUtils._simple_noise_reduction(audio_data, sample_rate)
+            # ステレオからモノラルに変換（必要に応じて）
+            if audio_data.ndim > 1:
+                audio_data = np.mean(audio_data, axis=0)
             
-            # 音声帯域の強調（300Hz-8000Hz）
-            enhanced = AudioUtils._enhance_speech_band(enhanced, sample_rate)
+            # ノイズ除去（改良版）
+            enhanced = AudioUtils._advanced_noise_reduction(audio_data, sample_rate)
             
-            # 正規化
-            enhanced = AudioUtils.normalize_audio(enhanced, 0.8)
+            # 音声帯域の強調（話者識別に重要な周波数帯域）
+            enhanced = AudioUtils._enhance_speaker_features(enhanced, sample_rate)
+            
+            # 動的レンジ圧縮（話者の声質差を明確化）
+            enhanced = AudioUtils._dynamic_range_compression(enhanced)
+            
+            # 正規化（クリッピング防止）
+            enhanced = AudioUtils.normalize_audio(enhanced, 0.85)
             
             return enhanced
             
-        except Exception:
+        except Exception as e:
+            logging.warning(f"音声前処理エラー: {e}")
             # エラー時は正規化のみ
             return AudioUtils.normalize_audio(audio_data, 0.8)
     
@@ -364,3 +372,93 @@ class AudioUtils:
             audio_copy[-fade_out_samples:] *= fade_out_curve
         
         return audio_copy
+    
+    @staticmethod
+    def _advanced_noise_reduction(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """改良版ノイズ除去"""
+        try:
+            import scipy.signal as signal
+            
+            # スペクトル減算による高度なノイズ除去
+            # 短時間フーリエ変換
+            nperseg = min(2048, len(audio) // 8)
+            f, t, Zxx = signal.stft(audio, sample_rate, nperseg=nperseg)
+            
+            # ノイズレベル推定（最初の0.5秒から）
+            noise_frames = int(0.5 * sample_rate / (nperseg // 4))
+            noise_spectrum = np.mean(np.abs(Zxx[:, :noise_frames]), axis=1, keepdims=True)
+            
+            # スペクトル減算
+            magnitude = np.abs(Zxx)
+            phase = np.angle(Zxx)
+            
+            # ノイズ減算（保守的に）
+            enhanced_magnitude = magnitude - 0.5 * noise_spectrum
+            enhanced_magnitude = np.maximum(enhanced_magnitude, 0.1 * magnitude)
+            
+            # 逆変換
+            enhanced_stft = enhanced_magnitude * np.exp(1j * phase)
+            _, enhanced = signal.istft(enhanced_stft, sample_rate, nperseg=nperseg)
+            
+            return enhanced[:len(audio)]
+            
+        except Exception:
+            # エラー時は簡易ハイパスフィルタ
+            return AudioUtils._simple_noise_reduction(audio, sample_rate)
+    
+    @staticmethod
+    def _enhance_speaker_features(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """話者特徴の強調"""
+        try:
+            import scipy.signal as signal
+            
+            # 話者識別に重要な周波数帯域を強調
+            # 基本周波数帯域（80-300Hz）を軽く強調
+            sos_low = signal.butter(4, [80, 300], btype='band', fs=sample_rate, output='sos')
+            low_enhanced = signal.sosfilt(sos_low, audio) * 0.3
+            
+            # 音声認識に重要な帯域（300-3400Hz）を強調
+            sos_mid = signal.butter(4, [300, 3400], btype='band', fs=sample_rate, output='sos')
+            mid_enhanced = signal.sosfilt(sos_mid, audio) * 1.2
+            
+            # 高周波成分（3400-8000Hz）を適度に強調
+            sos_high = signal.butter(4, [3400, 8000], btype='band', fs=sample_rate, output='sos')
+            high_enhanced = signal.sosfilt(sos_high, audio) * 0.8
+            
+            # 合成
+            enhanced = audio + low_enhanced + mid_enhanced + high_enhanced
+            
+            return enhanced
+            
+        except Exception:
+            # エラー時は元の音声を返す
+            return audio
+    
+    @staticmethod
+    def _dynamic_range_compression(audio: np.ndarray) -> np.ndarray:
+        """動的レンジ圧縮（話者の声質差を明確化）"""
+        try:
+            # 簡易コンプレッサー
+            threshold = 0.3
+            ratio = 4.0
+            
+            # 絶対値で処理
+            abs_audio = np.abs(audio)
+            sign = np.sign(audio)
+            
+            # 閾値を超える部分を圧縮
+            mask = abs_audio > threshold
+            compressed = abs_audio.copy()
+            compressed[mask] = threshold + (abs_audio[mask] - threshold) / ratio
+            
+            # 符号を復元
+            result = compressed * sign
+            
+            # 小音量部分の増幅（話者の細かい特徴を強調）
+            quiet_mask = abs_audio < 0.1
+            result[quiet_mask] *= 1.5
+            
+            return result
+            
+        except Exception:
+            return audio

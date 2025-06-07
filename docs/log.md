@@ -62,6 +62,8 @@ source ~/.bashrc
 ## claude code 実際に使ってみる
 
 まずは開発計画を立てさせる。
+色々なプラクティス
+https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices
 
 
 ### test
@@ -82,6 +84,17 @@ export HF_TOKEN=hf_xxx # ここに自分のトークンを入れる
 ```
 
 
+### claude codeの使用料量などの確認
 
+https://zenn.dev/ryoppippi/articles/6c9a8fe6629cd6
 
+```bash
+# Check usage
+npx ccusage@latest
+
+# 日別レポート
+npx ccusage daily
+
+# セッション別レポート
+npx ccusage session
 

@@ -62,6 +62,7 @@ Thumbs.db
 output/
 separated/
 temp/
+tests/outputs/*test
 
 # ログ
 *.log
