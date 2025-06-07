@@ -73,6 +73,14 @@ python test_real_audio.py data/input/input_wav.wav ./output
 
 ```
 
+### pyannote-audioの認証トークン設定
+
+export HF_TOKEN=your_token_hereする
+
+```bash
+export HF_TOKEN=hf_xxx # ここに自分のトークンを入れる
+```
+
 
 
 

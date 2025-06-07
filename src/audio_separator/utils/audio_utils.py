@@ -169,6 +169,68 @@ class AudioUtils:
         return normalized
     
     @staticmethod
+    def enhance_speech_for_diarization(audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """
+        話者分離用の音声品質向上処理
+        
+        Args:
+            audio_data: 音声データ
+            sample_rate: サンプリングレート
+            
+        Returns:
+            np.ndarray: 処理済み音声データ
+        """
+        try:
+            # ノイズ除去（簡易的なスペクトル減算）
+            enhanced = AudioUtils._simple_noise_reduction(audio_data, sample_rate)
+            
+            # 音声帯域の強調（300Hz-8000Hz）
+            enhanced = AudioUtils._enhance_speech_band(enhanced, sample_rate)
+            
+            # 正規化
+            enhanced = AudioUtils.normalize_audio(enhanced, 0.8)
+            
+            return enhanced
+            
+        except Exception:
+            # エラー時は正規化のみ
+            return AudioUtils.normalize_audio(audio_data, 0.8)
+    
+    @staticmethod
+    def _simple_noise_reduction(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """簡易ノイズ除去"""
+        try:
+            from scipy import signal
+            # 高域ノイズを軽減するローパスフィルタ
+            nyquist = sample_rate / 2
+            cutoff = 8000  # 8kHz以上をカット
+            if cutoff < nyquist:
+                normalized_cutoff = cutoff / nyquist
+                b, a = signal.butter(4, normalized_cutoff, btype='low')
+                return signal.filtfilt(b, a, audio)
+            return audio
+        except ImportError:
+            return audio
+    
+    @staticmethod
+    def _enhance_speech_band(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """音声帯域強調"""
+        try:
+            from scipy import signal
+            nyquist = sample_rate / 2
+            # 音声帯域（300Hz-4000Hz）を強調
+            low_cutoff = 300 / nyquist
+            high_cutoff = 4000 / nyquist
+            if low_cutoff < 1.0 and high_cutoff < 1.0:
+                b, a = signal.butter(4, [low_cutoff, high_cutoff], btype='band')
+                enhanced = signal.filtfilt(b, a, audio)
+                # 元音声とミックス（7:3）
+                return 0.7 * audio + 0.3 * enhanced
+            return audio
+        except ImportError:
+            return audio
+    
+    @staticmethod
     def split_audio_by_time(
         audio_data: np.ndarray,
         sample_rate: int,

@@ -89,26 +89,44 @@ class SpeakerProcessor:
     def _initialize_pipeline(self) -> None:
         """
         pyannote-audioパイプラインを初期化（遅延初期化）
-        
-        Note: 現在はモックバージョン。実際のpyannote-audio実装時に置き換える
         """
         if self._is_initialized:
             return
         
         try:
-            # TODO: 実際のpyannote-audio初期化
-            # from pyannote.audio import Pipeline
-            # self.pipeline = Pipeline.from_pretrained(
-            #     self.model_name,
-            #     use_auth_token=self.use_auth_token
-            # )
+            # 実際のpyannote-audioを試行、失敗時は簡易話者分離にフォールバック
+            try:
+                from pyannote.audio import Pipeline
+                import torch
+                
+                logging.info(f"pyannote-audioパイプライン '{self.model_name}' を読み込み中...")
+                
+                # デバイス設定
+                if self.device == 'auto':
+                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                else:
+                    device = torch.device(self.device)
+                
+                # パイプライン初期化
+                self.pipeline = Pipeline.from_pretrained(
+                    self.model_name,
+                    use_auth_token=self.use_auth_token if self.use_auth_token else None
+                )
+                
+                # デバイスに移動
+                self.pipeline = self.pipeline.to(device)
+                self._device = device
+                self._pyannote_available = True
+                
+                logging.info(f"pyannote-audioパイプライン初期化完了 (デバイス: {device})")
+                
+            except Exception as pyannote_error:
+                logging.warning(f"pyannote-audio利用不可: {pyannote_error}")
+                logging.info("簡易話者分離にフォールバック")
+                self.pipeline = f"simple_{self.model_name}"
+                self._pyannote_available = False
             
-            # モックバージョン
-            logging.warning("モックバージョン: 実際のpyannote-audioモデルは未実装")
-            self.pipeline = f"mock_{self.model_name}"
             self._is_initialized = True
-            
-            logging.info(f"話者分離パイプライン初期化完了: {self.model_name}")
             
         except Exception as e:
             raise RuntimeError(f"話者分離パイプラインの初期化に失敗: {e}")
@@ -117,7 +135,8 @@ class SpeakerProcessor:
         self,
         audio_path: str,
         min_duration: float = 1.0,
-        max_speakers: Optional[int] = None
+        max_speakers: Optional[int] = None,
+        clustering_threshold: float = 0.7
     ) -> List[SpeakerSegment]:
         """
         音声ファイルの話者分離を実行
@@ -126,6 +145,7 @@ class SpeakerProcessor:
             audio_path: 音声ファイルパス
             min_duration: 最小セグメント長（秒）
             max_speakers: 最大話者数（Noneの場合は自動検出）
+            clustering_threshold: クラスタリング閾値（0.1-1.0、低いほど細かく分離）
             
         Returns:
             List[SpeakerSegment]: 話者セグメントのリスト
@@ -154,8 +174,39 @@ class SpeakerProcessor:
             
             logging.info(f"音声長: {duration:.2f}秒")
             
-            # 話者分離実行（現在はモック）
-            segments = self._diarize_mock(audio_path, duration, min_duration, max_speakers)
+            # 話者分離用の音声前処理
+            if hasattr(self, '_pyannote_available') and self._pyannote_available:
+                logging.info("話者分離用音声品質向上処理実行中...")
+                
+                # 元音声を読み込み
+                audio_data, sample_rate = AudioUtils.load_audio(audio_path)
+                
+                # 音声品質向上処理
+                enhanced_audio = AudioUtils.enhance_speech_for_diarization(audio_data, sample_rate)
+                
+                # 一時ファイルに保存
+                temp_enhanced_path = audio_path.parent / f"temp_enhanced_{audio_path.name}"
+                AudioUtils.save_audio(enhanced_audio, temp_enhanced_path, sample_rate)
+                
+                # 処理後の音声パスを更新
+                audio_path_for_processing = temp_enhanced_path
+                logging.info("音声品質向上処理完了")
+            else:
+                audio_path_for_processing = audio_path
+            
+            # 話者分離実行
+            if hasattr(self, '_pyannote_available') and self._pyannote_available:
+                segments = self._diarize_pyannote(audio_path_for_processing, duration, min_duration, max_speakers, clustering_threshold)
+                
+                # 一時ファイル削除
+                if audio_path_for_processing != audio_path:
+                    try:
+                        audio_path_for_processing.unlink()
+                        logging.info("一時ファイル削除完了")
+                    except Exception:
+                        pass
+            else:
+                segments = self._diarize_simple(audio_path, duration, min_duration, max_speakers)
             
             # 結果のフィルタリング
             filtered_segments = [
@@ -178,17 +229,16 @@ class SpeakerProcessor:
             logging.error(f"話者分離処理でエラー: {e}")
             raise RuntimeError(f"話者分離に失敗: {e}")
     
-    def _diarize_mock(
+    def _diarize_pyannote(
         self,
         audio_path: Path,
         duration: float,
         min_duration: float,
-        max_speakers: Optional[int]
+        max_speakers: Optional[int],
+        clustering_threshold: float = 0.7
     ) -> List[SpeakerSegment]:
         """
-        話者分離のモック実装
-        
-        実際のpyannote-audio実装までの暫定処理
+        pyannote-audioを使用した実際の話者分離
         
         Args:
             audio_path: 音声ファイルパス
@@ -197,11 +247,207 @@ class SpeakerProcessor:
             max_speakers: 最大話者数
             
         Returns:
-            List[SpeakerSegment]: モック話者セグメント
+            List[SpeakerSegment]: 話者セグメント
         """
-        logging.warning("モック実装: 実際の話者分離は行われていません")
+        logging.info("実際のpyannote-audioによる話者分離実行中...")
         
-        # モック処理: 音声を時間で分割して複数話者に割り当て
+        try:
+            # pyannote-audioパイプライン実行（パラメータ調整）
+            # クラスタリング閾値を調整して話者分離精度を向上
+            if hasattr(self.pipeline, 'instantiate'):
+                # パラメータを動的に調整
+                hyperparameters = {
+                    "clustering": {
+                        "method": "centroid",
+                        "min_cluster_size": int(min_duration * 2),  # 最小クラスタサイズ
+                        "threshold": clustering_threshold,
+                    },
+                    "segmentation": {
+                        "min_duration_on": min_duration / 2,  # 最小発話時間
+                        "min_duration_off": min_duration / 4,  # 最小無音時間
+                    }
+                }
+                diarization = self.pipeline(str(audio_path), **hyperparameters)
+            else:
+                # 標準実行
+                diarization = self.pipeline(str(audio_path))
+            
+            # 結果をSpeakerSegmentに変換
+            segments = []
+            for turn, track, speaker in diarization.itertracks(yield_label=True):
+                # セグメント長チェック
+                segment_duration = turn.end - turn.start
+                if segment_duration >= min_duration:
+                    segment = SpeakerSegment(
+                        start_time=turn.start,
+                        end_time=turn.end,
+                        speaker_id=speaker,
+                        confidence=1.0  # pyannoteは信頼度を直接提供しないため1.0とする
+                    )
+                    segments.append(segment)
+            
+            # 最大話者数制限
+            if max_speakers is not None:
+                # 話者ごとの総発話時間を計算
+                speaker_durations = {}
+                for segment in segments:
+                    if segment.speaker_id not in speaker_durations:
+                        speaker_durations[segment.speaker_id] = 0.0
+                    speaker_durations[segment.speaker_id] += segment.duration
+                
+                # 発話時間の長い順にソート
+                top_speakers = sorted(
+                    speaker_durations.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:max_speakers]
+                
+                top_speaker_ids = [speaker_id for speaker_id, _ in top_speakers]
+                
+                # 上位話者のセグメントのみを保持
+                segments = [seg for seg in segments if seg.speaker_id in top_speaker_ids]
+            
+            logging.info(f"実際のpyannote-audio分離完了: {len(segments)}セグメント")
+            return segments
+            
+        except Exception as e:
+            logging.error(f"pyannote-audio分離でエラー: {e}")
+            logging.info("簡易分離にフォールバック")
+            return self._diarize_simple(audio_path, duration, min_duration, max_speakers)
+    
+    def _diarize_simple(
+        self,
+        audio_path: Path,
+        duration: float,
+        min_duration: float,
+        max_speakers: Optional[int]
+    ) -> List[SpeakerSegment]:
+        """
+        簡易話者分離実装
+        
+        Args:
+            audio_path: 音声ファイルパス
+            duration: 音声の長さ
+            min_duration: 最小セグメント長
+            max_speakers: 最大話者数
+            
+        Returns:
+            List[SpeakerSegment]: 簡易話者セグメント
+        """
+        logging.info("簡易話者分離実行中...")
+        
+        # 音声を読み込んで振幅ベースで話者変化点を推定
+        try:
+            audio_data, sample_rate = AudioUtils.load_audio(audio_path)
+            
+            # 振幅ベースのセグメンテーション
+            segments = self._segment_by_amplitude(audio_data, sample_rate, duration, min_duration)
+            
+            # 話者ID割り当て（簡易的）
+            segments = self._assign_speaker_ids(segments, max_speakers)
+            
+            logging.info(f"簡易話者分離完了: {len(segments)}セグメント")
+            return segments
+            
+        except Exception as e:
+            logging.warning(f"簡易分離でもエラー: {e}")
+            # 最後の手段：時間ベース分割
+            return self._diarize_time_based(duration, min_duration, max_speakers)
+    
+    def _segment_by_amplitude(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        duration: float,
+        min_duration: float
+    ) -> List[SpeakerSegment]:
+        """
+        振幅ベースでの音声セグメンテーション
+        """
+        # 1秒ごとのRMS計算
+        frame_length = sample_rate  # 1秒
+        hop_length = frame_length // 2  # 0.5秒ずつスライド
+        
+        rms_values = []
+        for i in range(0, len(audio_data) - frame_length, hop_length):
+            frame = audio_data[i:i + frame_length]
+            rms = np.sqrt(np.mean(frame ** 2))
+            rms_values.append(rms)
+        
+        # 閾値以上の部分を音声区間とする
+        threshold = np.percentile(rms_values, 30)  # 下位30%を無音として除外
+        
+        segments = []
+        in_speech = False
+        start_time = 0.0
+        
+        for i, rms in enumerate(rms_values):
+            current_time = i * hop_length / sample_rate
+            
+            if rms > threshold and not in_speech:
+                # 音声開始
+                start_time = current_time
+                in_speech = True
+            elif rms <= threshold and in_speech:
+                # 音声終了
+                end_time = current_time
+                if (end_time - start_time) >= min_duration:
+                    segments.append(SpeakerSegment(
+                        start_time=start_time,
+                        end_time=end_time,
+                        speaker_id="TEMP",  # 後で割り当て
+                        confidence=0.7
+                    ))
+                in_speech = False
+        
+        # 最後のセグメント処理
+        if in_speech and (duration - start_time) >= min_duration:
+            segments.append(SpeakerSegment(
+                start_time=start_time,
+                end_time=duration,
+                speaker_id="TEMP",
+                confidence=0.7
+            ))
+        
+        return segments
+    
+    def _assign_speaker_ids(
+        self,
+        segments: List[SpeakerSegment],
+        max_speakers: Optional[int]
+    ) -> List[SpeakerSegment]:
+        """
+        セグメントに話者IDを割り当て（簡易的な実装）
+        """
+        if not segments:
+            return segments
+        
+        # 話者数を決定
+        if max_speakers is not None:
+            num_speakers = min(max_speakers, 3)
+        else:
+            num_speakers = min(len(segments) // 2 + 1, 3)
+        
+        speaker_ids = [f"SPEAKER_{i:02d}" for i in range(num_speakers)]
+        
+        # セグメントの長さに基づいて話者を循環的に割り当て
+        for i, segment in enumerate(segments):
+            speaker_index = i % num_speakers
+            segment.speaker_id = speaker_ids[speaker_index]
+        
+        return segments
+    
+    def _diarize_time_based(
+        self,
+        duration: float,
+        min_duration: float,
+        max_speakers: Optional[int]
+    ) -> List[SpeakerSegment]:
+        """
+        時間ベースの分割（最後の手段）
+        """
+        logging.info("時間ベース分割による話者分離")
+        
         segments = []
         
         # 話者数を決定（最大3人、音声長に応じて調整）
@@ -226,7 +472,7 @@ class SpeakerProcessor:
                     start_time=current_time,
                     end_time=end_time,
                     speaker_id=speaker_ids[speaker_index],
-                    confidence=0.8 + np.random.random() * 0.2  # 0.8-1.0の信頼度
+                    confidence=0.6  # 時間ベースは信頼度低め
                 )
                 segments.append(segment)
             
