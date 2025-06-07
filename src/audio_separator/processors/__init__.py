@@ -1,7 +1,6 @@
 """音声処理プロセッサ"""
 
-# 実装後にアンコメント
-# from .demucs_processor import DemucsProcessor
-# from .speaker_processor import SpeakerProcessor
+from .demucs_processor import DemucsProcessor
+# from .speaker_processor import SpeakerProcessor  # 次に実装
 
-# __all__ = ["DemucsProcessor", "SpeakerProcessor"]
+__all__ = ["DemucsProcessor"]
