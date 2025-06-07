@@ -23,23 +23,23 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Analysis",
     "Topic :: Multimedia :: Sound/Audio :: Conversion"
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     # 音声処理コア
-    "torch>=1.13.0",
-    "torchaudio>=0.13.0",
+    "torch>=2.3.0",
+    "torchaudio>=2.3.0",
     "librosa>=0.10.0",
-    "numpy>=1.21.0",
+    "numpy>=1.26.0,<2.0",
     "scipy>=1.9.0",
     
     # Demucs BGM分離
     "demucs>=4.0.0",
     
     # pyannote-audio 話者分離
-    "pyannote-audio>=3.1.0",
+    "pyannote-audio>=3.3.0",
     
     # 設定・ユーティリティ
-    "pydantic>=1.10.0",
+    "pydantic>=2.0.0",
     "click>=8.0.0",
     "rich>=12.0.0",
     
@@ -66,9 +66,9 @@ dev = [
     "sphinx-rtd-theme>=1.2.0",
 ]
 gpu = [
-    # GPU対応（CUDA）
-    "torch[cuda]>=1.13.0",
-    "torchaudio[cuda]>=0.13.0",
+    # GPU対応（CUDA）- メイン依存関係で既にCUDA版が含まれるため、このセクションは参考用
+    "torch>=2.3.0",
+    "torchaudio>=2.3.0",
 ]
 dnd = [
     # ドラッグアンドドロップ機能

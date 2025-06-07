@@ -1,7 +1,11 @@
 # CLAUDE.md
 
 このファイルは、このリポジトリでコードを扱う際のClaude Code (claude.ai/code) への指針を提供します。
+
+## Claude Codeへの命令
+まずはCLAUDE.mdを参照してください。
 Claude Codeは以降日本語で出力をしてください。
+If you create any temporary new files, scripts, or helper files for iteration, clean up these files by removing them at the end of the task.
 
 ## プロジェクト概要
 
@@ -51,20 +55,57 @@ toyosatomimi/
 - **メモリ**: 8GB以上のRAM（GPU: 6GB VRAM推奨）
 - **OS**: Linux/Windows（WSL2推奨）
 
-### 依存関係インストール
+### uv環境セットアップ
+
+**このプロジェクトは uv (https://docs.astral.sh/uv/) でパッケージ管理されています。**
 
 ```bash
-# 仮想環境のアクティベート
-source .venv/bin/activate
+# uvのインストール（未インストールの場合）
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 主要パッケージのインストール
-pip install pyannote.audio  # 話者分離
-pip install demucs          # BGM分離
+# プロジェクトルートで環境セットアップ
+cd /path/to/toyosatomimi
+uv sync  # pyproject.tomlから全依存関係をインストール
 
-# その他の依存関係
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121  # CUDA対応PyTorch
-pip install librosa soundfile scipy  # 音声処理
+# 環境の再構築が必要な場合
+rm -rf .venv uv.lock  # 既存環境を完全削除
+uv sync               # クリーンな環境を再構築
 ```
+
+**注意**: CUDA版PyTorchは`uv sync`で自動的にインストールされます（pyproject.tomlで定義済み）。手動でのPyTorch追加は不要です。
+
+### uv使用方法
+
+**推奨：`uv run`コマンド使用**
+```bash
+# Pythonスクリプト実行
+uv run python script.py
+
+# パッケージ追加
+uv add package_name
+
+# 開発依存関係追加
+uv add --dev pytest
+
+# 仮想環境内でコマンド実行
+uv run pytest
+uv run python -m pip list
+```
+
+**従来方式（互換性）**
+```bash
+# 必要に応じて従来のactivate方式も使用可能
+source .venv/bin/activate
+python script.py
+```
+
+### uvの利点
+
+1. **高速インストール**: pipより10-100倍高速なパッケージインストール
+2. **一貫性のある環境**: `uv.lock`による依存関係の完全な固定
+3. **Pythonバージョン管理**: 複数Pythonバージョンの自動管理
+4. **互換性**: 既存のpip/venv/condaと併用可能
+5. **プロジェクト管理**: pyproject.tomlベースの統一管理
 
 ### Hugging Face認証設定（pyannote-audio用）
 
@@ -80,20 +121,32 @@ export HF_TOKEN='your_huggingface_token_here'
 
 ### 基本テスト
 
+**uvを使用したテスト実行（推奨）**
+
 ```bash
 # プロジェクトルートで実行
 cd /path/to/toyosatomimi
 
 # 環境チェック（pyannote-audio利用可能性）
-source .venv/bin/activate
-export HF_TOKEN='your_token'
-python tests/test_speaker_simple.py
+export HF_TOKEN='your_huggingface_token'
+uv run python tests/test_speaker_simple.py
 
 # 実音声ファイルでの統合テスト（推奨）
-python tests/test_real_audio.py data/input/input_wav.wav
+uv run python tests/test_real_audio.py data/input/input_wav.wav
 
 # 出力先指定
-python tests/test_real_audio.py data/input/input_wav.wav tests/outputs/my_test
+uv run python tests/test_real_audio.py data/input/input_wav.wav tests/outputs/my_test
+
+# BGM分離のみテスト
+uv run python tests/test_integrated_separation.py data/input/input_wav.wav tests/outputs/bgm_test
+```
+
+**従来方式**
+```bash
+# 必要に応じて従来のactivate方式も使用可能
+source .venv/bin/activate
+export HF_TOKEN='your_token'
+python tests/test_real_audio.py data/input/input_wav.wav
 ```
 
 ### 出力ディレクトリ
@@ -157,9 +210,13 @@ tests/outputs/latest/
 ### 1. pyannote-audio インポートエラー
 ```bash
 # 症状: ModuleNotFoundError: No module named 'pyannote'
-# 解決: 仮想環境内に再インストール
-pip uninstall -y pyannote.audio
-pip install pyannote.audio
+# 解決: uvで再インストール
+uv pip uninstall pyannote.audio
+uv pip install pyannote.audio
+
+# または環境の完全再構築
+rm -rf .venv uv.lock
+uv sync
 ```
 
 ### 2. CUDA メモリエラー
@@ -171,7 +228,10 @@ pip install pyannote.audio
 ### 3. NumPy 互換性
 ```bash
 # NumPy 2.x系との非互換
-pip install "numpy<2.0"
+uv pip install "numpy<2.0"
+
+# または pyproject.tomlで固定
+# dependencies = ["numpy>=1.21.0,<2.0"]
 ```
 
 ## 開発フェーズ

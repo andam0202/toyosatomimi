@@ -16,12 +16,18 @@
 ## 技術仕様
 
 ### 使用技術スタック
-- **言語**: Python 3.10+
-- **音声処理**: Demucs (htdemucs), pyannote-audio v3.1, librosa
-- **機械学習**: PyTorch (CUDA 12.1対応)
-- **環境管理**: pip + venv（uvからの移行）
-- **テスト**: 統合テストスクリプト
+- **言語**: Python 3.10+ (uv管理)
+- **音声処理**: Demucs 4.0.1, pyannote-audio 3.3.2, librosa
+- **機械学習**: PyTorch 2.7.1+cu126 (CUDA対応)
+- **環境管理**: uv (高速パッケージ管理・仮想環境)
+- **テスト**: 統合テストスクリプト（実音声テスト完了）
 - **GUI**: Tkinter（フェーズ3で実装予定）
+
+### 動作確認済み環境
+- **OS**: Linux (WSL2), Windows
+- **Python**: 3.10.18 (uv managed)
+- **GPU**: NVIDIA GPU (CUDA 12.6対応)
+- **依存関係**: pyproject.toml + uv.lockで固定
 
 ### 処理フロー
 ```
@@ -41,11 +47,13 @@ BGM分離（Demucs htdemucs）
     └── speaker_SPEAKER_XX/（話者N）
 ```
 
-### パフォーマンス実績
-- **処理時間**: 283秒音声を37秒で処理（RTX 2060）
-- **GPU加速**: CUDA利用で6-10倍高速化
-- **出力サイズ**: 約89MB（BGM 52MB + 話者音声 37MB）
-- **話者検出**: 最大10人程度（実用的上限）
+### パフォーマンス実績（2025年6月時点）
+- **テスト音声**: 283.88秒（4分44秒）
+- **検出話者数**: 3人（55セグメント）
+- **BGM分離**: 完了（vocals 26MB, bgm 26MB）
+- **話者分離**: 全58ファイル出力
+- **GPU加速**: PyTorch 2.7.1+cu126で高速処理
+- **環境**: uv環境で安定動作確認済み
 
 ## 開発フェーズ
 
@@ -99,6 +107,39 @@ BGM分離（Demucs htdemucs）
 - [ ] ユーザーマニュアル作成
 - [ ] トラブルシューティングガイド
 - [ ] 配布パッケージ準備
+
+## uvパッケージ管理
+
+**このプロジェクトはuvで管理されています。**
+
+### 環境セットアップ
+```bash
+# uvインストール（未インストールの場合）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# プロジェクトセットアップ
+cd toyosatomimi
+uv sync  # 全依存関係インストール
+
+# GPU版PyTorch追加（推奨）
+uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+### 使用方法
+```bash
+# スクリプト実行（推奨）
+uv run python script.py
+uv run python tests/test_real_audio.py data/input/input_wav.wav
+
+# パッケージ管理
+uv add package_name     # 新パッケージ追加
+uv sync                 # 依存関係同期
+uv pip list             # インストール済みパッケージ一覧
+
+# 従来のactivate方式（互換性）
+source .venv/bin/activate
+python script.py
+```
 
 ## 実装済みディレクトリ構造
 
