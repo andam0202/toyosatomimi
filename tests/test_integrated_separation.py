@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 # プロジェクトルートを追加
-sys.path.append(str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from audio_separator.processors.demucs_processor import DemucsProcessor
 from audio_separator.processors.speaker_processor import SpeakerProcessor
@@ -173,7 +173,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="統合音声分離テスト")
     parser.add_argument("input_file", help="入力音声ファイル")
-    parser.add_argument("output_dir", help="出力ディレクトリ")
+    parser.add_argument("output_dir", nargs='?', default="tests/outputs/latest", help="出力ディレクトリ（デフォルト: tests/outputs/latest）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ出力")
     
     args = parser.parse_args()

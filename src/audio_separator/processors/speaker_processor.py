@@ -252,25 +252,9 @@ class SpeakerProcessor:
         logging.info("実際のpyannote-audioによる話者分離実行中...")
         
         try:
-            # pyannote-audioパイプライン実行（パラメータ調整）
-            # クラスタリング閾値を調整して話者分離精度を向上
-            if hasattr(self.pipeline, 'instantiate'):
-                # パラメータを動的に調整
-                hyperparameters = {
-                    "clustering": {
-                        "method": "centroid",
-                        "min_cluster_size": int(min_duration * 2),  # 最小クラスタサイズ
-                        "threshold": clustering_threshold,
-                    },
-                    "segmentation": {
-                        "min_duration_on": min_duration / 2,  # 最小発話時間
-                        "min_duration_off": min_duration / 4,  # 最小無音時間
-                    }
-                }
-                diarization = self.pipeline(str(audio_path), **hyperparameters)
-            else:
-                # 標準実行
-                diarization = self.pipeline(str(audio_path))
+            # pyannote-audioパイプライン実行
+            # v3.1では直接パラメータを渡すことができないため、標準実行
+            diarization = self.pipeline(str(audio_path))
             
             # 結果をSpeakerSegmentに変換
             segments = []

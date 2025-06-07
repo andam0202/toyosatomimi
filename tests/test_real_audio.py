@@ -16,8 +16,8 @@ from pathlib import Path
 import argparse
 import logging
 
-# プロジェクトのsrcディレクトリをパスに追加
-sys.path.insert(0, str(Path(__file__).parent))
+# プロジェクトルートディレクトリをパスに追加
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.audio_separator.processors import DemucsProcessor, SpeakerProcessor
 from src.audio_separator.utils import AudioUtils, FileUtils, ConfigManager
@@ -48,10 +48,7 @@ def test_audio_separation(input_file: str, output_dir: str = None):
         return False
     
     # 出力ディレクトリの設定
-    if output_dir is None:
-        output_dir = input_path.parent / f"{input_path.stem}_separated"
-    else:
-        output_dir = Path(output_dir)
+    output_dir = Path(output_dir)
     
     print(f"🎵 音声分離テスト開始")
     print(f"📁 入力ファイル: {input_path}")
@@ -237,7 +234,8 @@ def main():
     parser.add_argument(
         'output_dir',
         nargs='?',
-        help='出力ディレクトリ（省略時は入力ファイルと同じ場所）'
+        default='tests/outputs/latest',
+        help='出力ディレクトリ（デフォルト: tests/outputs/latest）'
     )
     
     parser.add_argument(

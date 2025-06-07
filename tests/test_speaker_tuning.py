@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 # プロジェクトルートを追加
-sys.path.append(str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from audio_separator.processors.speaker_processor import SpeakerProcessor
 from audio_separator.utils.audio_utils import AudioUtils
@@ -204,7 +204,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="話者分離パラメータ調整テスト")
     parser.add_argument("vocals_file", help="ボーカル音声ファイル（BGM分離済み）")
-    parser.add_argument("output_dir", help="出力ディレクトリ")
+    parser.add_argument("output_dir", nargs='?', default="tests/outputs/latest", help="出力ディレクトリ（デフォルト: tests/outputs/latest）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ出力")
     
     args = parser.parse_args()
