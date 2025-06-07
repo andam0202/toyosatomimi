@@ -57,26 +57,28 @@ class DemucsProcessor:
     def _initialize_model(self) -> None:
         """
         Demucsモデルを初期化（遅延初期化）
-        
-        Note: 現在はモックバージョン。実際のDemucs実装時に置き換える
         """
         if self._is_initialized:
             return
         
         try:
-            # TODO: 実際のDemucsモデル初期化
-            # from demucs.api import load_model
-            # self.model = load_model(self.model_name)
+            # 実際のDemucsを試行、失敗時はシンプル分離にフォールバック
+            try:
+                import demucs
+                logging.info(f"Demucs v{demucs.__version__} 検出")
+                self.model = f"demucs_{self.model_name}"
+                self._demucs_available = True
+            except Exception as demucs_error:
+                logging.warning(f"Demucs利用不可: {demucs_error}")
+                logging.info("シンプルBGM分離にフォールバック")
+                self.model = f"simple_{self.model_name}"
+                self._demucs_available = False
             
-            # モックバージョン
-            logging.warning("モックバージョン: 実際のDemucsモデルは未実装")
-            self.model = f"mock_{self.model_name}"
             self._is_initialized = True
-            
-            logging.info(f"Demucsモデル初期化完了: {self.model_name}")
+            logging.info(f"BGM分離モデル初期化完了: {self.model}")
             
         except Exception as e:
-            raise RuntimeError(f"Demucsモデルの初期化に失敗: {e}")
+            raise RuntimeError(f"BGM分離モデルの初期化に失敗: {e}")
     
     def separate(
         self,
@@ -126,8 +128,11 @@ class DemucsProcessor:
             # 音声ファイル読み込み
             audio_data, sample_rate = AudioUtils.load_audio(input_path)
             
-            # BGM分離処理（現在はモック）
-            vocals, bgm = self._separate_audio_mock(audio_data, sample_rate)
+            # BGM分離処理
+            if hasattr(self, '_demucs_available') and self._demucs_available:
+                vocals, bgm = self._separate_audio_demucs(audio_data, sample_rate)
+            else:
+                vocals, bgm = self._separate_audio_simple(audio_data, sample_rate)
             
             # 結果を保存
             AudioUtils.save_audio(vocals, vocals_path, sample_rate)
@@ -143,15 +148,13 @@ class DemucsProcessor:
             logging.error(f"BGM分離処理でエラー: {e}")
             raise RuntimeError(f"BGM分離に失敗: {e}")
     
-    def _separate_audio_mock(
+    def _separate_audio_demucs(
         self,
         audio_data: np.ndarray,
         sample_rate: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        音声分離のモック実装
-        
-        実際のDemucs実装までの暫定処理
+        Demucsを使用した音声分離
         
         Args:
             audio_data: 入力音声データ
@@ -160,19 +163,136 @@ class DemucsProcessor:
         Returns:
             Tuple[np.ndarray, np.ndarray]: (ボーカル, BGM)
         """
-        logging.warning("モック実装: 実際の分離は行われていません")
+        logging.info("実際のDemucsによる音声分離実行中...")
         
-        # モック処理: 元音声を少し減衰させたものをボーカルとして返す
-        # BGMは元音声の高域を減衰させたもの
+        try:
+            import torch
+            from demucs import pretrained
+            
+            # モデル読み込み
+            if not hasattr(self, '_demucs_model') or self._demucs_model is None:
+                logging.info(f"Demucsモデル '{self.model_name}' を読み込み中...")
+                self._demucs_model = pretrained.get_model(self.model_name)
+                
+                # デバイス設定（GPU優先）
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                self._demucs_model = self._demucs_model.to(device)
+                self._demucs_model.eval()
+                
+                logging.info(f"Demucsモデル読み込み完了 (デバイス: {device})")
+            
+            # 音声データをPyTorchテンソルに変換
+            # audio_dataがモノラルの場合はステレオに変換
+            if len(audio_data.shape) == 1:
+                # モノラル -> ステレオ
+                stereo_audio = np.stack([audio_data, audio_data])
+            else:
+                stereo_audio = audio_data
+            
+            # [channels, samples] -> [1, channels, samples] (バッチ次元追加)
+            audio_tensor = torch.from_numpy(stereo_audio).float().unsqueeze(0)
+            
+            # テンソルを同じデバイスに移動
+            device = next(self._demucs_model.parameters()).device
+            audio_tensor = audio_tensor.to(device)
+            
+            logging.info(f"入力テンソル形状: {audio_tensor.shape}, デバイス: {device}")
+            
+            # Demucsで分離実行
+            with torch.no_grad():
+                from demucs.apply import apply_model
+                separated = apply_model(self._demucs_model, audio_tensor)
+            
+            logging.info(f"分離結果テンソル形状: {separated.shape}")
+            
+            # separated shape: [1, 4, channels, samples]
+            # 4つのソース: drums, bass, other, vocals
+            separated = separated.squeeze(0)  # バッチ次元を削除
+            
+            # ボーカル（インデックス3）とその他を分離
+            vocals_tensor = separated[3]  # vocals
+            
+            # BGM = drums + bass + other
+            bgm_tensor = separated[0] + separated[1] + separated[2]  # drums + bass + other
+            
+            # テンソルをCPUに移動してからnumpy配列に変換してモノラルに
+            vocals = vocals_tensor.mean(dim=0).cpu().numpy()  # ステレオ -> モノラル
+            bgm = bgm_tensor.mean(dim=0).cpu().numpy()  # ステレオ -> モノラル
+            
+            logging.info("実際のDemucs分離完了")
+            return vocals, bgm
+            
+        except Exception as e:
+            logging.error(f"Demucs分離でエラー: {e}")
+            logging.info("シンプル分離にフォールバック")
+            return self._separate_audio_simple(audio_data, sample_rate)
+    
+    def _separate_audio_simple(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        シンプルな音声分離実装
         
-        # ボーカル（元音声の80%）
-        vocals = audio_data * 0.8
+        Args:
+            audio_data: 入力音声データ
+            sample_rate: サンプリングレート
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: (ボーカル, BGM)
+        """
+        logging.info("シンプル分離法による音声分離実行中...")
         
-        # BGM（元音声の30%、簡易的なローパスフィルタ）
-        # 実際には周波数解析が必要だが、モックなので簡易的に処理
-        bgm = audio_data * 0.3
+        # ステレオの場合はセンター抜き法でボーカル抽出
+        if len(audio_data.shape) > 1:
+            # ステレオ音声の場合
+            left = audio_data[0] if audio_data.shape[0] == 2 else audio_data
+            right = audio_data[1] if audio_data.shape[0] == 2 else audio_data
+            
+            # センター抜き法：L-Rでセンター成分（ボーカル）を強調
+            vocals = (left - right) * 2.0
+            
+            # BGM：L+Rでサイド成分を取得し、ローパスフィルタ適用
+            center = (left + right) / 2
+            bgm = self._apply_lowpass_filter(center, sample_rate, cutoff_freq=4000)
+        else:
+            # モノラル音声の場合は周波数フィルタのみ
+            # ハイパスフィルタでボーカル域を強調
+            vocals = self._apply_highpass_filter(audio_data, sample_rate, cutoff_freq=200)
+            
+            # ローパスフィルタでBGM域を強調
+            bgm = self._apply_lowpass_filter(audio_data, sample_rate, cutoff_freq=4000) * 0.7
+        
+        # 正規化
+        vocals = AudioUtils.normalize_audio(vocals, 0.8)
+        bgm = AudioUtils.normalize_audio(bgm, 0.8)
         
         return vocals, bgm
+    
+    def _apply_lowpass_filter(self, audio: np.ndarray, sample_rate: int, cutoff_freq: int = 4000) -> np.ndarray:
+        """ローパスフィルタ適用"""
+        try:
+            from scipy import signal
+            nyquist = sample_rate / 2
+            normalized_cutoff = cutoff_freq / nyquist
+            b, a = signal.butter(4, normalized_cutoff, btype='low')
+            return signal.filtfilt(b, a, audio)
+        except ImportError:
+            # scipyがない場合は単純な減衰
+            return audio * 0.7
+    
+    def _apply_highpass_filter(self, audio: np.ndarray, sample_rate: int, cutoff_freq: int = 200) -> np.ndarray:
+        """ハイパスフィルタ適用"""
+        try:
+            from scipy import signal
+            nyquist = sample_rate / 2
+            normalized_cutoff = cutoff_freq / nyquist
+            b, a = signal.butter(4, normalized_cutoff, btype='high')
+            return signal.filtfilt(b, a, audio)
+        except ImportError:
+            # scipyがない場合は元音声をそのまま返す
+            return audio
     
     def get_model_info(self) -> Dict[str, Any]:
         """

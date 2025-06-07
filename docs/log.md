@@ -6,6 +6,7 @@
 
 claude code使ってみる
 
+
 ```
 
 # install nodejs
@@ -62,7 +63,15 @@ source ~/.bashrc
 
 まずは開発計画を立てさせる。
 
+
+### test
+
 ```bash
+# youtubeから拾ってきた音声データでテスト
+python test_real_audio.py data/input/input_wav.wav ./output
+
+
+```
 
 
 

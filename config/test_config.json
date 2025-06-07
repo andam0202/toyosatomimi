@@ -1,0 +1,29 @@
+{
+    "demucs": {
+        "model": "htdemucs",
+        "device": "auto",
+        "output_format": "wav"
+    },
+    "speaker_separation": {
+        "min_duration": 1.0,
+        "model": "pyannote/speaker-diarization-3.1",
+        "use_auth_token": true,
+        "max_speakers": null
+    },
+    "audio": {
+        "sample_rate": 44100,
+        "normalize_output": true,
+        "apply_fade": true,
+        "fade_duration": 0.01
+    },
+    "output": {
+        "create_individual_segments": true,
+        "create_combined_files": true,
+        "organize_by_speaker": true
+    },
+    "processing": {
+        "verbose_logging": true,
+        "show_progress": true,
+        "cleanup_temp_files": false
+    }
+}

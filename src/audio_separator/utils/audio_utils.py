@@ -96,8 +96,13 @@ class AudioUtils:
             if audio_data.dtype != np.float32:
                 audio_data = audio_data.astype(np.float32)
             
-            # soundfileで保存
-            sf.write(str(output_path), audio_data, sample_rate, format=format)
+            # 形状チェック：ステレオの場合は転置
+            if len(audio_data.shape) == 2 and audio_data.shape[0] == 2:
+                # [2, samples] -> [samples, 2] for soundfile
+                audio_data = audio_data.T
+            
+            # soundfileで保存（拡張子から自動形式判定）
+            sf.write(str(output_path), audio_data, sample_rate)
             
             logging.info(f"音声ファイル保存完了: {output_path}")
             
