@@ -559,7 +559,8 @@ class SpeakerProcessor:
         segments: List[SpeakerSegment],
         output_dir: str,
         create_individual: bool = True,
-        create_combined: bool = True
+        create_combined: bool = True,
+        naming_style: str = "detailed"  # "simple" or "detailed"
     ) -> Dict[str, List[str]]:
         """
         話者セグメントから音声ファイルを抽出
@@ -570,6 +571,7 @@ class SpeakerProcessor:
             output_dir: 出力ディレクトリ
             create_individual: 個別セグメントファイルを作成するか
             create_combined: 結合ファイルを作成するか
+            naming_style: ファイル命名スタイル ("simple": segment_001.wav, "detailed": filename_speaker01_seg001_0m15s-0m23s.wav)
             
         Returns:
             Dict[str, List[str]]: 話者IDごとの出力ファイルパスリスト
@@ -592,6 +594,9 @@ class SpeakerProcessor:
             # 音声データ読み込み
             audio_data, sample_rate = AudioUtils.load_audio(audio_path)
             
+            # 元ファイル名のベース名を取得
+            base_name = audio_path.stem  # 拡張子なしのファイル名
+            
             # 話者ごとにグループ化
             speaker_segments = {}
             for segment in segments:
@@ -604,8 +609,17 @@ class SpeakerProcessor:
             for speaker_id, speaker_segs in speaker_segments.items():
                 logging.info(f"話者{speaker_id}の音声抽出: {len(speaker_segs)}セグメント")
                 
-                # 話者ディレクトリ作成
-                speaker_dir = output_dir / f"speaker_{speaker_id}"
+                # 話者ディレクトリ作成（naming_styleに応じて）
+                if naming_style == "detailed":
+                    speaker_num = speaker_id.replace("SPEAKER_", "")
+                    try:
+                        speaker_num = f"{int(speaker_num)+1:02d}"
+                    except ValueError:
+                        speaker_num = "01"
+                    speaker_dir = output_dir / f"speaker_{speaker_num}_{base_name}"
+                else:
+                    speaker_dir = output_dir / f"speaker_{speaker_id}"
+                
                 FileUtils.ensure_directory(speaker_dir)
                 
                 output_files[speaker_id] = []
@@ -624,8 +638,18 @@ class SpeakerProcessor:
                             # フェード処理適用
                             segment_audio = AudioUtils.apply_fade(segment_audio, sample_rate)
                             
+                            # ファイル名生成
+                            filename = self._generate_filename(
+                                base_name=base_name,
+                                speaker_id=speaker_id,
+                                naming_style=naming_style,
+                                segment_idx=i+1,
+                                start_time=segment.start_time,
+                                end_time=segment.end_time
+                            )
+                            
                             # ファイル保存
-                            segment_file = speaker_dir / f"segment_{i+1:03d}.wav"
+                            segment_file = speaker_dir / filename
                             AudioUtils.save_audio(segment_audio, segment_file, sample_rate)
                             output_files[speaker_id].append(str(segment_file))
                             extracted_segments.append(segment_audio)
@@ -635,7 +659,14 @@ class SpeakerProcessor:
                     combined_audio = AudioUtils.concatenate_audio(extracted_segments)
                     combined_audio = AudioUtils.normalize_audio(combined_audio)
                     
-                    combined_file = speaker_dir / f"speaker_{speaker_id}_combined.wav"
+                    # 結合ファイル名生成
+                    combined_filename = self._generate_filename(
+                        base_name=base_name,
+                        speaker_id=speaker_id,
+                        naming_style=naming_style
+                    )
+                    
+                    combined_file = speaker_dir / combined_filename
                     AudioUtils.save_audio(combined_audio, combined_file, sample_rate)
                     output_files[speaker_id].append(str(combined_file))
                 
@@ -863,3 +894,67 @@ class SpeakerProcessor:
             logging.info(f"強制分割: {new_speaker_id} に {current_count}セグメントを割り当て")
         
         return result_segments
+    
+    def _format_time_for_filename(self, seconds: float) -> str:
+        """
+        秒数をファイル名用の時間文字列に変換
+        
+        Args:
+            seconds: 秒数
+            
+        Returns:
+            str: "1m23s" 形式の時間文字列
+        """
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m{secs:02d}s"
+    
+    def _generate_filename(
+        self, 
+        base_name: str, 
+        speaker_id: str, 
+        naming_style: str,
+        segment_idx: Optional[int] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None
+    ) -> str:
+        """
+        ファイル名を生成
+        
+        Args:
+            base_name: 元ファイルのベース名（拡張子なし）
+            speaker_id: 話者ID
+            naming_style: 命名スタイル ("simple" or "detailed")
+            segment_idx: セグメント番号
+            start_time: 開始時間（秒）
+            end_time: 終了時間（秒）
+            
+        Returns:
+            str: 生成されたファイル名
+        """
+        if naming_style == "simple":
+            if segment_idx is not None:
+                return f"segment_{segment_idx:03d}.wav"
+            else:
+                return f"speaker_{speaker_id}_combined.wav"
+        
+        elif naming_style == "detailed":
+            # 話者IDを数値に変換（SPEAKER_00 -> 01）
+            speaker_num = speaker_id.replace("SPEAKER_", "")
+            try:
+                speaker_num = f"{int(speaker_num)+1:02d}"
+            except ValueError:
+                speaker_num = "01"
+            
+            if segment_idx is not None:
+                # セグメント個別ファイル
+                start_str = self._format_time_for_filename(start_time)
+                end_str = self._format_time_for_filename(end_time)
+                return f"{base_name}_speaker{speaker_num}_seg{segment_idx:03d}_{start_str}-{end_str}.wav"
+            else:
+                # 統合ファイル
+                return f"{base_name}_speaker{speaker_num}_combined.wav"
+        
+        else:
+            # デフォルトはsimple
+            return self._generate_filename(base_name, speaker_id, "simple", segment_idx, start_time, end_time)

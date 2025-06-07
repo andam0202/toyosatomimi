@@ -139,7 +139,8 @@ def test_speaker_separation_with_params(
         processor.extract_speaker_audio(
             audio_path=str(audio_file_path),
             segments=segments,
-            output_dir=str(output_path)
+            output_dir=str(output_path),
+            naming_style="detailed"  # 新しい詳細命名規則を使用
         )
         
         print("✅ 音声抽出完了")
