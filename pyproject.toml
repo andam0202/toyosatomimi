@@ -1,0 +1,148 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toyosatomimi"
+version = "0.1.0"
+description = "複数話者とBGMが混在する音声から、各話者の音声を個別に抽出するPythonアプリケーション"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Development Team", email = "dev@example.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Multimedia :: Sound/Audio :: Conversion"
+]
+requires-python = ">=3.8"
+dependencies = [
+    # 音声処理コア
+    "torch>=1.13.0",
+    "torchaudio>=0.13.0",
+    "librosa>=0.10.0",
+    "numpy>=1.21.0",
+    "scipy>=1.9.0",
+    
+    # Demucs BGM分離
+    "demucs>=4.0.0",
+    
+    # pyannote-audio 話者分離
+    "pyannote-audio>=3.1.0",
+    
+    # 設定・ユーティリティ
+    "pydantic>=1.10.0",
+    "click>=8.0.0",
+    "rich>=12.0.0",
+    
+    # 音声ファイル対応
+    "soundfile>=0.12.0",
+    "audioread>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # テスト
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    
+    # 型チェック・リント
+    "mypy>=1.0.0",
+    "black>=22.0.0",
+    "flake8>=5.0.0",
+    "isort>=5.10.0",
+    
+    # ドキュメント
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.2.0",
+]
+gpu = [
+    # GPU対応（CUDA）
+    "torch[cuda]>=1.13.0",
+    "torchaudio[cuda]>=0.13.0",
+]
+dnd = [
+    # ドラッグアンドドロップ機能
+    "tkinterdnd2>=0.3.0",
+]
+
+[project.scripts]
+toyosatomimi = "src.audio_separator.main:main"
+audio-separator = "src.audio_separator.main:main"
+
+[project.urls]
+Homepage = "https://github.com/andam0202/toyosatomimi"
+Repository = "https://github.com/andam0202/toyosatomimi.git"
+Issues = "https://github.com/andam0202/toyosatomimi/issues"
+
+# hatch設定
+[tool.hatch.build.targets.wheel]
+packages = ["src/audio_separator"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/config",
+    "/CLAUDE.md",
+    "/README.md",
+    "/DEVELOPMENT_PLAN.md"
+]
+
+# 開発ツール設定
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=src --cov-report=html --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
