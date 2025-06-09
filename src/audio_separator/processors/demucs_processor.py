@@ -7,7 +7,7 @@ Demucsモデルを使用してBGMとボーカルを分離する処理を提供
 import os
 import logging
 from pathlib import Path
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, Callable
 import numpy as np
 
 from ..utils.audio_utils import AudioUtils
@@ -85,7 +85,8 @@ class DemucsProcessor:
         input_path: str,
         output_dir: str,
         vocals_name: str = 'vocals.wav',
-        bgm_name: str = 'bgm.wav'
+        bgm_name: str = 'bgm.wav',
+        progress_callback: Optional[Callable[[float, str], None]] = None
     ) -> Tuple[str, str]:
         """
         BGMとボーカルを分離する
@@ -95,6 +96,7 @@ class DemucsProcessor:
             output_dir: 出力ディレクトリ
             vocals_name: ボーカル出力ファイル名
             bgm_name: BGM出力ファイル名
+            progress_callback: 進捗コールバック関数 (進捗率, メッセージ)
             
         Returns:
             Tuple[str, str]: (ボーカルファイルパス, BGMファイルパス)
@@ -122,11 +124,23 @@ class DemucsProcessor:
         logging.info(f"出力ディレクトリ: {output_dir}")
         
         try:
+            # 進捗報告
+            if progress_callback:
+                progress_callback(0.1, "モデル初期化中...")
+            
             # モデル初期化
             self._initialize_model()
             
+            # 進捗報告
+            if progress_callback:
+                progress_callback(0.3, "音声ファイル読み込み中...")
+            
             # 音声ファイル読み込み
             audio_data, sample_rate = AudioUtils.load_audio(input_path)
+            
+            # 進捗報告
+            if progress_callback:
+                progress_callback(0.5, "BGM分離処理中...")
             
             # BGM分離処理
             if hasattr(self, '_demucs_available') and self._demucs_available:
@@ -134,9 +148,17 @@ class DemucsProcessor:
             else:
                 vocals, bgm = self._separate_audio_simple(audio_data, sample_rate)
             
+            # 進捗報告
+            if progress_callback:
+                progress_callback(0.8, "音声ファイル保存中...")
+            
             # 結果を保存
             AudioUtils.save_audio(vocals, vocals_path, sample_rate)
             AudioUtils.save_audio(bgm, bgm_path, sample_rate)
+            
+            # 進捗報告
+            if progress_callback:
+                progress_callback(1.0, "BGM分離完了")
             
             logging.info(f"BGM分離完了")
             logging.info(f"ボーカル: {vocals_path}")

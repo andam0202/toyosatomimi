@@ -7,6 +7,15 @@
 Claude Codeは以降日本語で出力をしてください。
 If you create any temporary new files, scripts, or helper files for iteration, clean up these files by removing them at the end of the task.
 
+## GUI実行環境
+**重要**: このプロジェクトのGUIはWindows環境での使用を前提として開発されています。WSL環境でのGUI実行は表示システムの問題により推奨されません。GUI関連の開発・テストは必ずWindows PowerShellで行ってください。
+
+```powershell
+# GUI実行（Windows PowerShellで実行）
+cd C:\Users\mao0202\Documents\GitHub\toyosatomimi
+uv run python -m src.audio_separator.gui
+```
+
 ## プロジェクト概要
 
 toyosatomimi（音声分離アプリケーション）は、複数の話者とBGMが含まれる音声ファイルから、各話者の音声を個別に抽出するPythonアプリケーションです。

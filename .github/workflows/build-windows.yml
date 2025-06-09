@@ -1,0 +1,190 @@
+name: Build Windows Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:  # 手動実行可能
+
+jobs:
+  test:
+    name: Test Import and Basic Functionality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Set up Python
+      run: uv python install 3.10
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Run import tests
+      run: |
+        # GUI環境なしでのインポートテスト
+        uv run python -c "
+        import sys
+        sys.path.insert(0, 'src')
+        
+        # 基本インポートテスト
+        from audio_separator.gui.models.gui_model import AudioSeparationModel
+        from audio_separator.gui.controllers.separation_controller import SeparationController
+        from audio_separator.gui.components.file_selector import FileSelector
+        
+        print('✅ All imports successful')
+        
+        # モデル基本機能テスト
+        model = AudioSeparationModel()
+        print(f'✅ Model initialized with {len(model.separation_params)} parameters')
+        "
+
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Set up Python
+      run: uv python install 3.10
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Add Nuitka
+      run: uv add --dev nuitka
+    
+    - name: Build executable
+      run: |
+        uv run python nuitka_build.py --build
+    
+    - name: Test executable
+      run: |
+        # 実行ファイルの存在確認
+        if (Test-Path "dist/toyosatomimi.exe") {
+          Write-Host "✅ Executable created successfully"
+          # ファイルサイズ確認
+          $size = (Get-Item "dist/toyosatomimi.exe").Length / 1MB
+          Write-Host "📦 File size: $([math]::Round($size, 2)) MB"
+        } else {
+          Write-Host "❌ Executable not found"
+          exit 1
+        }
+    
+    - name: Create portable package
+      run: |
+        # ポータブル版パッケージ作成
+        New-Item -ItemType Directory -Path "toyosatomimi-portable" -Force
+        Copy-Item "dist/toyosatomimi.exe" "toyosatomimi-portable/"
+        Copy-Item "README.md" "toyosatomimi-portable/README.txt"
+        Copy-Item "LICENSE" "toyosatomimi-portable/LICENSE.txt"
+        
+        # 設定ディレクトリ（存在する場合）
+        if (Test-Path "config") {
+          Copy-Item "config" "toyosatomimi-portable/" -Recurse
+        }
+        
+        # ZIP圧縮
+        Compress-Archive -Path "toyosatomimi-portable/*" -DestinationPath "toyosatomimi-windows-portable.zip"
+    
+    - name: Upload executable artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: toyosatomimi-windows-exe
+        path: dist/toyosatomimi.exe
+        retention-days: 30
+    
+    - name: Upload portable package
+      uses: actions/upload-artifact@v4
+      with:
+        name: toyosatomimi-windows-portable
+        path: toyosatomimi-windows-portable.zip
+        retention-days: 30
+    
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/toyosatomimi.exe
+          toyosatomimi-windows-portable.zip
+        body: |
+          ## toyosatomimi ${{ github.ref_name }}
+          
+          音声分離アプリケーション Windows版
+          
+          ### 📦 ダウンロード
+          - `toyosatomimi.exe` - スタンドアロン実行ファイル
+          - `toyosatomimi-windows-portable.zip` - ポータブル版（推奨）
+          
+          ### 🚀 使用方法
+          1. ファイルをダウンロード
+          2. `toyosatomimi.exe`を実行
+          3. 音声ファイルを選択して分離開始
+          
+          ### ⚠️ 要件
+          - Windows 10/11 (64-bit)
+          - メモリ: 8GB以上推奨
+          - GPU: NVIDIA GPU（オプション、処理高速化）
+          
+          ### 🔧 主な機能
+          - BGM分離（Demucs）
+          - 話者分離（pyannote-audio）
+          - GPU加速対応
+          - 複数出力形式対応
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-dev:
+    name: Build Development Version
+    runs-on: windows-latest
+    needs: test
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Set up Python
+      run: uv python install 3.10
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Add Nuitka
+      run: uv add --dev nuitka
+    
+    - name: Build executable
+      run: |
+        uv run python nuitka_build.py --build
+    
+    - name: Upload development build
+      uses: actions/upload-artifact@v4
+      with:
+        name: toyosatomimi-dev-build
+        path: dist/toyosatomimi.exe
+        retention-days: 7

@@ -31,21 +31,22 @@ dependencies = [
     "librosa>=0.10.0",
     "numpy>=1.26.0,<2.0",
     "scipy>=1.9.0",
-    
     # Demucs BGM分離
     "demucs>=4.0.0",
-    
     # pyannote-audio 話者分離
     "pyannote-audio>=3.3.0",
-    
     # 設定・ユーティリティ
     "pydantic>=2.0.0",
     "click>=8.0.0",
     "rich>=12.0.0",
-    
     # 音声ファイル対応
     "soundfile>=0.12.0",
     "audioread>=3.0.0",
+    "tkinterdnd2>=0.4.3",
+    "pillow>=11.2.1",
+    "pygame>=2.6.1",
+    "matplotlib>=3.10.3",
+    "pywin32>=310",
 ]
 
 [project.optional-dependencies]
