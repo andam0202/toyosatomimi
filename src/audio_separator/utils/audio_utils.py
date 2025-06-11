@@ -169,6 +169,39 @@ class AudioUtils:
         return normalized
     
     @staticmethod
+    def light_enhance_for_diarization(audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """
+        BGM分離済み音声用の軽微な前処理
+        
+        Args:
+            audio_data: 音声データ (モノラル)
+            sample_rate: サンプリングレート
+            
+        Returns:
+            np.ndarray: 軽微に処理された音声データ
+        """
+        try:
+            # BGM分離済み音声なので軽微な処理のみ
+            processed_audio = audio_data.copy()
+            
+            # 1. 軽微なノイズゲーティング（閾値を低く設定）
+            rms = np.sqrt(np.mean(processed_audio**2))
+            noise_gate_threshold = rms * 0.05  # 非常に低い閾値
+            processed_audio[np.abs(processed_audio) < noise_gate_threshold] *= 0.5
+            
+            # 2. 軽微な正規化（ダイナミックレンジ保持）
+            max_val = np.max(np.abs(processed_audio))
+            if max_val > 0:
+                target_level = 0.7  # 控えめな正規化
+                processed_audio = processed_audio * (target_level / max_val)
+            
+            return processed_audio
+            
+        except Exception as e:
+            logging.warning(f"軽微な前処理でエラー: {e}")
+            return audio_data
+    
+    @staticmethod
     def enhance_speech_for_diarization(audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
         """
         話者分離用の音声品質向上処理

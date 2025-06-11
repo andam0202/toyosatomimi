@@ -13,7 +13,6 @@
 このプロセスにより、プロジェクトのルールを継続的に改善していきます。
 
 ## Claude Codeへの命令
-まずはCLAUDE.mdを参照してください。
 Claude Codeは以降日本語で出力をしてください。
 If you create any temporary new files, scripts, or helper files for iteration, clean up these files by removing them at the end of the task.
 

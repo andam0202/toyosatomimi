@@ -7,7 +7,7 @@ pyannote-audioモデルを使用して話者の識別・分離を行う処理を
 import os
 import logging
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional, Any, Callable
 import numpy as np
 
 from ..utils.audio_utils import AudioUtils
@@ -250,23 +250,27 @@ class SpeakerProcessor:
             if force_num_speakers:
                 logging.info(f"強制話者数: {force_num_speakers}人")
             
-            # 話者分離用の音声前処理
+            # BGM分離後音声の品質を確認
+            audio_info = AudioUtils.get_audio_info(audio_path)
+            logging.info(f"話者分離入力音声品質: {audio_info}")
+            
+            # BGM分離後の音声に最適化された前処理を適用
             if hasattr(self, '_pyannote_available') and self._pyannote_available:
-                logging.info("話者分離用音声品質向上処理実行中...")
+                logging.info("BGM分離済み音声用の軽微な前処理実行中...")
                 
                 # 元音声を読み込み
                 audio_data, sample_rate = AudioUtils.load_audio(audio_path)
                 
-                # 音声品質向上処理
-                enhanced_audio = AudioUtils.enhance_speech_for_diarization(audio_data, sample_rate)
+                # BGM分離後音声用の軽微な処理（ノイズ除去のみ）
+                enhanced_audio = AudioUtils.light_enhance_for_diarization(audio_data, sample_rate)
                 
                 # 一時ファイルに保存
-                temp_enhanced_path = audio_path.parent / f"temp_enhanced_{audio_path.name}"
+                temp_enhanced_path = audio_path.parent / f"temp_light_enhanced_{audio_path.name}"
                 AudioUtils.save_audio(enhanced_audio, temp_enhanced_path, sample_rate)
                 
                 # 処理後の音声パスを更新
                 audio_path_for_processing = temp_enhanced_path
-                logging.info("音声品質向上処理完了")
+                logging.info("軽微な前処理完了")
             else:
                 audio_path_for_processing = audio_path
             
@@ -282,7 +286,7 @@ class SpeakerProcessor:
                     except Exception:
                         pass
             else:
-                segments = self._diarize_simple(audio_path, duration, min_duration, max_speakers)
+                segments = self._diarize_simple(audio_path, duration, min_duration, max_speakers, force_num_speakers)
             
             # 結果のフィルタリング
             filtered_segments = [
@@ -329,6 +333,9 @@ class SpeakerProcessor:
         logging.info("実際のpyannote-audioによる話者分離実行中...")
         
         try:
+            # PyTorchのWarningを一時的に抑制
+            import warnings
+            warnings.filterwarnings("ignore", message="std(): degrees of freedom is <= 0")
             # pyannote-audioパイプライン実行
             # v3.1では直接パラメータを渡すことができないため、標準実行
             diarization = self.pipeline(str(audio_path))
@@ -347,31 +354,49 @@ class SpeakerProcessor:
                     )
                     segments.append(segment)
             
-            # 最大話者数制限
-            if max_speakers is not None:
-                # 話者ごとの総発話時間を計算
-                speaker_durations = {}
-                for segment in segments:
-                    if segment.speaker_id not in speaker_durations:
-                        speaker_durations[segment.speaker_id] = 0.0
-                    speaker_durations[segment.speaker_id] += segment.duration
-                
-                # 発話時間の長い順にソート
-                top_speakers = sorted(
-                    speaker_durations.items(),
-                    key=lambda x: x[1],
-                    reverse=True
-                )[:max_speakers]
-                
-                top_speaker_ids = [speaker_id for speaker_id, _ in top_speakers]
-                
-                # 上位話者のセグメントのみを保持
-                segments = [seg for seg in segments if seg.speaker_id in top_speaker_ids]
+            # 話者数制限処理（強制話者数を優先）
+            target_speakers = force_num_speakers if force_num_speakers is not None else max_speakers
             
-            # 強制話者数処理（1つの話者しか検出されなかった場合の分割処理）
-            if force_num_speakers is not None:
+            if target_speakers is not None:
                 unique_speakers = len(set(seg.speaker_id for seg in segments))
-                if unique_speakers == 1 and force_num_speakers > 1:
+                if force_num_speakers is not None:
+                    logging.info(f"検出された話者数: {unique_speakers}人, 強制話者数: {force_num_speakers}人")
+                else:
+                    logging.info(f"検出された話者数: {unique_speakers}人, 最大話者数: {max_speakers}人")
+                
+                if unique_speakers > target_speakers:
+                    # 検出された話者数が多い場合、上位N人に制限
+                    if force_num_speakers is not None:
+                        logging.info(f"話者数を{unique_speakers}人から{force_num_speakers}人に制限します")
+                    else:
+                        logging.info(f"話者数を{unique_speakers}人から{max_speakers}人に制限します")
+                    
+                    # 話者ごとの総発話時間を計算
+                    speaker_durations = {}
+                    for segment in segments:
+                        if segment.speaker_id not in speaker_durations:
+                            speaker_durations[segment.speaker_id] = 0.0
+                        speaker_durations[segment.speaker_id] += segment.duration
+                    
+                    # 発話時間の長い順にソート
+                    top_speakers = sorted(
+                        speaker_durations.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )[:target_speakers]
+                    
+                    top_speaker_ids = [speaker_id for speaker_id, _ in top_speakers]
+                    
+                    # 上位話者のセグメントのみを保持
+                    segments = [seg for seg in segments if seg.speaker_id in top_speaker_ids]
+                    
+                    if force_num_speakers is not None:
+                        logging.info(f"強制話者数制限適用完了: {len(top_speaker_ids)}人の話者を保持")
+                    else:
+                        logging.info(f"最大話者数制限適用完了: {len(top_speaker_ids)}人の話者を保持")
+                
+                elif force_num_speakers is not None and unique_speakers == 1 and force_num_speakers > 1:
+                    # 1つの話者しか検出されなかった場合の分割処理
                     logging.info(f"話者数が{unique_speakers}人のため、{force_num_speakers}人に強制分割します")
                     segments = self._force_split_speakers(segments, force_num_speakers)
             
@@ -385,14 +410,15 @@ class SpeakerProcessor:
         except Exception as e:
             logging.error(f"pyannote-audio分離でエラー: {e}")
             logging.info("簡易分離にフォールバック")
-            return self._diarize_simple(audio_path, duration, min_duration, max_speakers)
+            return self._diarize_simple(audio_path, duration, min_duration, max_speakers, force_num_speakers)
     
     def _diarize_simple(
         self,
         audio_path: Path,
         duration: float,
         min_duration: float,
-        max_speakers: Optional[int]
+        max_speakers: Optional[int],
+        force_num_speakers: Optional[int] = None
     ) -> List[SpeakerSegment]:
         """
         簡易話者分離実装
@@ -416,7 +442,38 @@ class SpeakerProcessor:
             segments = self._segment_by_amplitude(audio_data, sample_rate, duration, min_duration)
             
             # 話者ID割り当て（簡易的）
-            segments = self._assign_speaker_ids(segments, max_speakers)
+            target_speakers = force_num_speakers if force_num_speakers is not None else max_speakers
+            segments = self._assign_speaker_ids(segments, target_speakers)
+            
+            # 強制話者数処理（簡易分離版）
+            if force_num_speakers is not None:
+                unique_speakers = len(set(seg.speaker_id for seg in segments))
+                logging.info(f"簡易分離: 検出された話者数: {unique_speakers}人, 強制話者数: {force_num_speakers}人")
+                
+                if unique_speakers > force_num_speakers:
+                    # 発話時間の長い上位N人に制限
+                    logging.info(f"簡易分離: 話者数を{unique_speakers}人から{force_num_speakers}人に制限します")
+                    
+                    # 話者ごとの総発話時間を計算
+                    speaker_durations = {}
+                    for segment in segments:
+                        if segment.speaker_id not in speaker_durations:
+                            speaker_durations[segment.speaker_id] = 0.0
+                        speaker_durations[segment.speaker_id] += segment.duration
+                    
+                    # 発話時間の長い順にソート
+                    top_speakers = sorted(
+                        speaker_durations.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )[:force_num_speakers]
+                    
+                    top_speaker_ids = [speaker_id for speaker_id, _ in top_speakers]
+                    
+                    # 上位話者のセグメントのみを保持
+                    segments = [seg for seg in segments if seg.speaker_id in top_speaker_ids]
+                    
+                    logging.info(f"簡易分離: 強制話者数制限適用完了: {len(top_speaker_ids)}人の話者を保持")
             
             logging.info(f"簡易話者分離完了: {len(segments)}セグメント")
             return segments
@@ -909,6 +966,96 @@ class SpeakerProcessor:
         secs = int(seconds % 60)
         return f"{minutes}m{secs:02d}s"
     
+    def separate_speakers(
+        self,
+        input_file: Path,
+        output_dir: Path,
+        min_segment_length: float = 1.0,
+        max_segment_length: float = 30.0,
+        overlap_ratio: float = 0.1,
+        create_combined: bool = True,
+        create_individual: bool = True,
+        naming_style: str = "detailed",
+        progress_callback: Optional[Callable[[float], None]] = None,
+        **kwargs  # 追加パラメータを受け取る
+    ) -> Dict[str, Any]:
+        """
+        話者分離処理を実行（GUI用の統合メソッド）
+        
+        Args:
+            input_file: 入力音声ファイルのパス
+            output_dir: 出力ディレクトリ
+            min_segment_length: 最小セグメント長（秒）
+            max_segment_length: 最大セグメント長（秒）
+            overlap_ratio: オーバーラップ比率
+            create_combined: 結合ファイルを作成するか
+            create_individual: 個別セグメントファイルを作成するか
+            naming_style: ファイル命名スタイル
+            progress_callback: 進捗コールバック関数
+            
+        Returns:
+            Dict[str, Any]: 処理結果情報
+        """
+        try:
+            # 進捗通知
+            if progress_callback:
+                progress_callback(0.0)
+            
+            # GUIパラメータを抽出（存在する場合のみ使用）
+            clustering_threshold = kwargs.get('clustering_threshold', 0.5)
+            segmentation_onset = kwargs.get('segmentation_onset', 0.3)
+            segmentation_offset = kwargs.get('segmentation_offset', 0.3)
+            force_num_speakers = kwargs.get('force_num_speakers', None)
+            
+            # デバッグログ：受け取ったパラメータを確認
+            logging.info(f"SpeakerProcessor受け取りパラメータ:")
+            logging.info(f"  force_num_speakers: {force_num_speakers} (型: {type(force_num_speakers)})")
+            logging.info(f"  kwargs全体: {kwargs}")
+            
+            # 話者分離実行
+            segments = self.diarize(
+                audio_path=str(input_file),
+                min_duration=min_segment_length,
+                max_speakers=None,  # デフォルトは自動検出
+                clustering_threshold=clustering_threshold,
+                segmentation_onset=segmentation_onset,
+                segmentation_offset=segmentation_offset,
+                force_num_speakers=force_num_speakers
+            )
+            
+            # 進捗通知
+            if progress_callback:
+                progress_callback(50.0)
+            
+            # 音声抽出
+            output_files = self.extract_speaker_audio(
+                audio_path=str(input_file),
+                segments=segments,
+                output_dir=str(output_dir),
+                create_individual=create_individual,
+                create_combined=create_combined,
+                naming_style=naming_style
+            )
+            
+            # 進捗通知
+            if progress_callback:
+                progress_callback(100.0)
+            
+            # 処理結果を作成
+            result = {
+                'output_files': output_files,
+                'segments_detected': len(segments),
+                'speakers_detected': len(output_files),
+                'total_duration': sum(seg.duration for seg in segments)
+            }
+            
+            logging.info(f"話者分離処理完了: {len(output_files)}人の話者、{len(segments)}セグメント")
+            return result
+            
+        except Exception as e:
+            logging.error(f"話者分離処理エラー: {e}")
+            raise
+
     def _generate_filename(
         self, 
         base_name: str, 

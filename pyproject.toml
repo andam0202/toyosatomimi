@@ -147,3 +147,8 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
 ]
+
+[dependency-groups]
+dev = [
+    "nuitka>=2.7.7",
+]

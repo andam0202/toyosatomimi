@@ -73,14 +73,20 @@ def build_with_nuitka():
     
     # Windows固有の設定
     if sys.platform == "win32":
-        nuitka_args.extend([
-            "--windows-icon-from-ico=assets/icon.ico",  # アイコン（存在する場合）
+        # アイコンファイルが存在する場合のみ追加
+        icon_path = project_root / "assets" / "icon.ico"
+        windows_args = [
             "--product-name=toyosatomimi",
             "--file-description=toyosatomimi - 音声分離アプリケーション",
             "--product-version=1.0.0",
             "--file-version=1.0.0.0",
             "--copyright=Copyright (C) 2024 toyosatomimi development team",
-        ])
+        ]
+        
+        if icon_path.exists():
+            windows_args.insert(0, f"--windows-icon-from-ico={icon_path}")
+        
+        nuitka_args.extend(windows_args)
     
     print("=" * 60)
     print("toyosatomimi - Nuitka ビルド開始")
