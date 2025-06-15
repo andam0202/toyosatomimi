@@ -92,12 +92,32 @@ class MainWindow(tk.Tk):
         style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
         style.configure('Accent.TButton', font=('Arial', 10, 'bold'))
         
+        # メインボタン用のスタイル
+        style.configure('MainStart.TButton', 
+                       font=('Arial', 14, 'bold'),
+                       padding=(20, 10))
+        
         # プログレスバーのスタイル
         style.configure('TProgressbar', thickness=20)
     
     def _create_components(self):
         """UIコンポーネントを作成"""
-        # メインフレーム
+        # ステータスバー（最下部）
+        self._create_status_bar()
+        
+        # メイン分離開始ボタン（ステータスバーの上）
+        self.main_button_frame = ttk.Frame(self)
+        self.main_button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(10, 5))
+        
+        self.main_start_button = ttk.Button(
+            self.main_button_frame,
+            text="🎯 音声分離を開始",
+            command=self._on_main_start_click,
+            style='MainStart.TButton'
+        )
+        self.main_start_button.pack(pady=5, ipadx=30, ipady=15)
+        
+        # メインフレーム（ボタンフレームの上に配置）
         self.main_frame = ttk.Frame(self)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
@@ -127,7 +147,7 @@ class MainWindow(tk.Tk):
         
         # 進捗表示
         self.progress_display = ProgressDisplay(self.left_panel, self.controller)
-        self.progress_display.pack(fill=tk.X)
+        self.progress_display.pack(fill=tk.X, pady=(0, 10))
         
         # プレビューパネル
         self.preview_panel = PreviewPanel(self.right_panel, self.controller)
@@ -137,9 +157,6 @@ class MainWindow(tk.Tk):
         """レイアウトを設定"""
         # メニューバー作成
         self._create_menu()
-        
-        # ステータスバー作成
-        self._create_status_bar()
     
     def _create_menu(self):
         """メニューバーを作成"""
@@ -261,6 +278,36 @@ class MainWindow(tk.Tk):
             if hasattr(self, '_save_timer'):
                 self.after_cancel(self._save_timer)
             self._save_timer = self.after(1000, self._auto_save_settings)
+    
+    def _on_main_start_click(self):
+        """メイン分離開始ボタンクリック"""
+        try:
+            self.controller.start_separation()
+            logging.info("メイン分離開始ボタンクリック")
+        except Exception as e:
+            logging.error(f"メイン分離開始ボタンエラー: {e}")
+    
+    def update_main_button_state(self, is_processing: bool, has_file: bool):
+        """メイン分離開始ボタンの状態を更新"""
+        try:
+            if is_processing:
+                self.main_start_button.config(
+                    state=tk.DISABLED,
+                    text="🔄 処理中..."
+                )
+            else:
+                if has_file:
+                    self.main_start_button.config(
+                        state=tk.NORMAL,
+                        text="🎯 音声分離を開始"
+                    )
+                else:
+                    self.main_start_button.config(
+                        state=tk.DISABLED,
+                        text="📁 ファイルを選択してください"
+                    )
+        except Exception as e:
+            logging.error(f"メインボタン状態更新エラー: {e}")
     
     def _auto_save_settings(self):
         """設定の自動保存"""

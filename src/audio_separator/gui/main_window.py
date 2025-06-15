@@ -16,7 +16,6 @@ from .components.file_selector import FileSelector
 from .components.parameter_panel import ParameterPanel
 from .components.output_panel import OutputPanel
 from .components.progress_display import ProgressDisplay
-from .components.log_display import LogDisplay
 from .components.control_buttons import ControlButtons
 from .components.preview_panel import PreviewPanel
 from .models.gui_model import AudioSeparationModel
@@ -106,8 +105,6 @@ class MainWindow(tk.Tk):
         # 進捗表示
         self.progress_display = ProgressDisplay(self, self.controller)
         
-        # ログ表示
-        self.log_display = LogDisplay(self, self.controller)
         
         # プレビューパネル
         self.preview_panel = PreviewPanel(self, self.controller)
@@ -131,21 +128,44 @@ class MainWindow(tk.Tk):
         # 出力設定パネル（右側）
         self.output_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
         
-        # 実行制御ボタン
-        self.control_buttons.pack(fill=tk.X, pady=(0, 10))
+        # 進捗表示と制御ボタンエリア
+        progress_control_frame = ttk.Frame(main_frame)
+        progress_control_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 進捗表示
-        self.progress_display.pack(fill=tk.X, pady=(0, 10))
+        self.progress_display.pack(fill=tk.X, pady=(0, 5))
+        
+        # 制御ボタン（停止・一時停止・設定保存）
+        self.control_buttons.pack(fill=tk.X, pady=(0, 10))
         
         # 下部エリア（ログとプレビューをタブで切り替え）
         notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill=tk.BOTH, expand=True)
+        notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # ログタブ
-        notebook.add(self.log_display, text="ログ")
         
         # プレビュータブ
         notebook.add(self.preview_panel, text="結果プレビュー")
+        
+        # 分離開始ボタン（最下部に大きく配置）
+        start_button_frame = ttk.Frame(main_frame)
+        start_button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        self.main_start_button = ttk.Button(
+            start_button_frame,
+            text="🎯 音声分離を開始",
+            command=self._on_main_start_click,
+            style='Accent.TButton'
+        )
+        self.main_start_button.pack(pady=5, ipadx=20, ipady=10)
+        
+        # 分離開始ボタンのフォント設定
+        self.main_start_button.configure(style='MainStart.TButton')
+        
+        # メインボタン用のスタイル作成
+        style = ttk.Style()
+        style.configure('MainStart.TButton', 
+                       font=('Arial', 14, 'bold'),
+                       padding=(20, 10))
     
     def _setup_bindings(self):
         """キーボードショートカットを設定"""
@@ -159,9 +179,7 @@ class MainWindow(tk.Tk):
     
     def _setup_logging(self):
         """ログハンドラーを設定"""
-        # GUIログハンドラーを作成
-        gui_handler = self.log_display.get_log_handler()
-        logging.getLogger().addHandler(gui_handler)
+        # 基本的なログ設定
         logging.getLogger().setLevel(logging.INFO)
     
     def _on_closing(self):
@@ -182,6 +200,36 @@ class MainWindow(tk.Tk):
         
         logging.info("toyosatomimi GUI終了")
         self.destroy()
+    
+    def _on_main_start_click(self):
+        """メイン分離開始ボタンクリック"""
+        try:
+            self.controller.start_separation()
+            logging.info("メイン分離開始ボタンクリック")
+        except Exception as e:
+            logging.error(f"メイン分離開始ボタンエラー: {e}")
+    
+    def update_main_button_state(self, is_processing: bool, has_file: bool):
+        """メイン分離開始ボタンの状態を更新"""
+        try:
+            if is_processing:
+                self.main_start_button.config(
+                    state=tk.DISABLED,
+                    text="🔄 処理中..."
+                )
+            else:
+                if has_file:
+                    self.main_start_button.config(
+                        state=tk.NORMAL,
+                        text="🎯 音声分離を開始"
+                    )
+                else:
+                    self.main_start_button.config(
+                        state=tk.DISABLED,
+                        text="📁 ファイルを選択してください"
+                    )
+        except Exception as e:
+            logging.error(f"メインボタン状態更新エラー: {e}")
     
     def _save_current_settings(self):
         """現在の設定を保存"""

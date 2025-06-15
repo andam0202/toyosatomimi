@@ -25,21 +25,12 @@ class ControlButtons(ttk.Frame):
     def _create_widgets(self):
         """ウィジェットを作成"""
         # メインフレーム
-        main_frame = ttk.LabelFrame(self, text="🎮 実行制御", padding=10)
+        main_frame = ttk.LabelFrame(self, text="⚙️ 処理制御", padding=10)
         main_frame.pack(fill=tk.X)
         
         # ボタンフレーム
         button_frame = ttk.Frame(main_frame)
         button_frame.pack()
-        
-        # 分離開始ボタン
-        self.start_button = ttk.Button(
-            button_frame,
-            text="🎯 分離開始",
-            command=self._on_start_click,
-            style='Accent.TButton'
-        )
-        self.start_button.pack(side=tk.LEFT, padx=(0, 10))
         
         # 一時停止ボタン
         self.pause_button = ttk.Button(
@@ -76,14 +67,6 @@ class ControlButtons(ttk.Frame):
     def _setup_layout(self):
         """レイアウトを設定"""
         pass
-    
-    def _on_start_click(self):
-        """分離開始ボタンクリック"""
-        try:
-            self.controller.start_separation()
-            logging.info("分離開始ボタンクリック")
-        except Exception as e:
-            logging.error(f"分離開始ボタンエラー: {e}")
     
     def _on_pause_click(self):
         """一時停止ボタンクリック"""
@@ -139,7 +122,6 @@ class ControlButtons(ttk.Frame):
         try:
             if is_processing:
                 # 処理中
-                self.start_button.config(state=tk.DISABLED)
                 self.pause_button.config(state=tk.NORMAL)
                 self.stop_button.config(state=tk.NORMAL)
                 self.save_button.config(state=tk.DISABLED)
@@ -147,7 +129,6 @@ class ControlButtons(ttk.Frame):
                 
             else:
                 # 待機中
-                self.start_button.config(state=tk.NORMAL if has_file else tk.DISABLED)
                 self.pause_button.config(state=tk.DISABLED)
                 self.stop_button.config(state=tk.DISABLED)
                 self.save_button.config(state=tk.NORMAL)

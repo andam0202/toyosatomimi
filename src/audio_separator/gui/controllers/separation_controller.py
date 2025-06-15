@@ -323,6 +323,10 @@ class SeparationController:
             if hasattr(self.view, 'control_buttons'):
                 self.view.control_buttons.update_button_states(is_processing, has_file)
             
+            # メイン分離開始ボタンの状態更新
+            if hasattr(self.view, 'update_main_button_state'):
+                self.view.update_main_button_state(is_processing, has_file)
+            
         except Exception as e:
             logging.error(f"UI状態更新エラー: {e}")
     
