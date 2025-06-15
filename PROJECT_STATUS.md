@@ -116,6 +116,7 @@ uv run python tests/test_real_audio.py data/input/sample.wav
 ```
 
 ### GUI実行（Windows専用）
+
 ```powershell
 # 確実なGUI実行
 cd C:\Users\mao0202\Documents\GitHub\toyosatomimi

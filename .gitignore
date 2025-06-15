@@ -110,3 +110,7 @@ __pypackages__/
 
 # Hugging Face キャッシュ
 .cache/huggingface/
+
+# 個人情報が載っている部分は省く
+
+PROJECT_STATUS.md
