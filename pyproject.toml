@@ -25,7 +25,7 @@ classifiers = [
 ]
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    # 音声処理コア
+    # 音声処理コア - CPU版（安定動作）
     "torch>=2.3.0",
     "torchaudio>=2.3.0",
     "librosa>=0.10.0",
@@ -147,6 +147,17 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
 ]
+
+# PyTorch CUDA版インデックス設定（一時的に無効化）
+# [[tool.uv.index]]
+# name = "pytorch-cu121" 
+# url = "https://download.pytorch.org/whl/cu121"
+# explicit = true
+
+# [tool.uv.sources]
+# torch = { index = "pytorch-cu121" }
+# torchvision = { index = "pytorch-cu121" }
+# torchaudio = { index = "pytorch-cu121" }
 
 [dependency-groups]
 dev = [

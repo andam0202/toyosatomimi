@@ -86,6 +86,23 @@ class SpeakerProcessor:
         
         logging.info(f"話者分離プロセッサ初期化: モデル={model_name}, デバイス={device}")
     
+    def _get_auth_token(self):
+        """Hugging Face認証トークンを取得"""
+        import os
+        
+        # 環境変数から取得
+        token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
+        
+        if token:
+            logging.info("✅ Hugging Face tokenが環境変数から取得されました")
+            return token
+        elif self.use_auth_token:
+            logging.info("🔑 Hugging Face tokenが設定されていますが、環境変数が見つかりません")
+            return True  # huggingface_hubのデフォルトトークン使用を試行
+        else:
+            logging.warning("❌ Hugging Face tokenが設定されていません")
+            return None
+    
     def _initialize_pipeline(self) -> None:
         """
         pyannote-audioパイプラインを初期化（遅延初期化）
@@ -101,16 +118,31 @@ class SpeakerProcessor:
                 
                 logging.info(f"pyannote-audioパイプライン '{self.model_name}' を読み込み中...")
                 
-                # デバイス設定
-                if self.device == 'auto':
-                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                # デバイス設定（設定に基づく）
+                if self.device == 'cuda':
+                    # GPU強制使用
+                    if torch.cuda.is_available():
+                        device = torch.device('cuda')
+                        logging.info("pyannote-audio: GPU使用を強制しています")
+                    else:
+                        logging.warning("pyannote-audio: GPU強制指定されましたが、CUDAが利用できません。CPUで実行します")
+                        device = torch.device('cpu')
+                elif self.device == 'cpu':
+                    # CPU強制使用
+                    device = torch.device('cpu')
+                    logging.info("pyannote-audio: CPU使用を強制しています")
                 else:
-                    device = torch.device(self.device)
+                    # auto: GPU優先、フォールバックCPU
+                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                    logging.info(f"pyannote-audio: 自動デバイス選択: {device}")
+                
+                # Hugging Face token設定の確認・自動設定
+                auth_token = self._get_auth_token()
                 
                 # パイプライン初期化
                 self.pipeline = Pipeline.from_pretrained(
                     self.model_name,
-                    use_auth_token=self.use_auth_token if self.use_auth_token else None
+                    use_auth_token=auth_token
                 )
                 
                 # パイプラインの詳細パラメータ調整

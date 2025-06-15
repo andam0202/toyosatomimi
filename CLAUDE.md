@@ -278,3 +278,44 @@ uv pip install "numpy<2.0"
 - **入力対応**: WAV, MP3, FLAC, M4A, AAC
 - **出力形式**: WAV（44.1kHz, 16-bit）
 - **推奨入力**: WAV形式（圧縮による音質劣化なし）
+
+## GPU利用について
+
+### 現在の状況
+- **CPU版PyTorch**: 安定動作を優先して採用
+- **GPU対応**: 技術的には実装済みだが、環境依存の問題で無効化
+- **処理性能**: CPU版でも実用的な速度で動作
+
+### GPU対応の技術実装
+以下の機能は実装済みですが、CUDA環境の問題により現在は無効化されています：
+
+1. **GPU強制使用設定**
+   - `device='cuda'`でのGPU強制モード
+   - `device='auto'`でのGPU優先・CPUフォールバック
+   - `device='cpu'`でのCPU強制モード
+
+2. **Hugging Face Token自動検出**
+   - 環境変数`HF_TOKEN`の自動取得
+   - pyannote-audioの認証設定
+
+3. **処理速度最適化**
+   - GPU使用時は6-10倍の高速化が期待される
+   - VRAM使用量の最適化設定
+
+### GPU有効化手順（将来的）
+```powershell
+# CUDA版PyTorchのインストール（環境が整った時）
+uv pip install torch==2.4.0+cu121 torchvision==0.19.0+cu121 torchaudio==2.4.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# 環境変数設定
+$env:HF_TOKEN="your_huggingface_token"
+$env:CUDA_VISIBLE_DEVICES="0"
+
+# GPU強制使用でアプリ起動
+.\run_with_gpu.ps1
+```
+
+### 既知の制限事項
+- **Windows WSL環境**: CUDA DLLの依存関係問題
+- **PyTorch CUDA版**: `fbgemm.dll`エラー
+- **現在の対応**: CPU版での安定動作を優先

@@ -196,8 +196,24 @@ class DemucsProcessor:
                 logging.info(f"Demucsモデル '{self.model_name}' を読み込み中...")
                 self._demucs_model = pretrained.get_model(self.model_name)
                 
-                # デバイス設定（GPU優先）
-                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                # デバイス設定（設定に基づく）
+                if self.device == 'cuda':
+                    # GPU強制使用
+                    if torch.cuda.is_available():
+                        device = 'cuda'
+                        logging.info("GPU使用を強制しています")
+                    else:
+                        logging.warning("GPU強制指定されましたが、CUDAが利用できません。CPUで実行します")
+                        device = 'cpu'
+                elif self.device == 'cpu':
+                    # CPU強制使用
+                    device = 'cpu'
+                    logging.info("CPU使用を強制しています")
+                else:
+                    # auto: GPU優先、フォールバックCPU
+                    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                    logging.info(f"自動デバイス選択: {device}")
+                
                 self._demucs_model = self._demucs_model.to(device)
                 self._demucs_model.eval()
                 
